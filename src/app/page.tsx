@@ -11,6 +11,8 @@ export default async function HomePage({
 }) {
   const params = await searchParams;
   const searchTerm = params.search?.trim() || '';
+  const ubicacion = params.ubicacion || '';
+  const fecha = params.fecha || '';
 
   // ✅ Obtener usuario directamente desde Supabase (lee las cookies correctamente)
   let user: Usuario | null = null;
@@ -30,30 +32,37 @@ export default async function HomePage({
     // Usuario no logueado, user queda null
   }
 
-  // Obtener eventos
-  let url = 'http://localhost:3000/api/events';
-  if (searchTerm) {
-    url += `?search=${encodeURIComponent(searchTerm)}`;
-  }
-
+  // Obtener eventos directamente de Supabase
   let eventos: Evento[] = [];
   let errorMsg = '';
 
   try {
-    const res = await fetch(url, {
-      cache: 'no-store',
-      next: { revalidate: 0 },
-    });
+    const supabase = await createClient();
+    
+    let query = supabase
+      .from('evento')
+      .select('*, categoria(*)')
+      .eq('estado', 'activo');
 
-    const json: ApiResponse<Evento[]> = await res.json();
+    if (searchTerm) {
+      query = query.ilike('titulo', `%${searchTerm}%`);
+    }
+    if (ubicacion) {
+      query = query.eq('ubicacion', ubicacion);
+    }
+    if (fecha) {
+      query = query.gte('fecha', fecha);
+    }
 
-    if (!res.ok || json.error) {
-      errorMsg = json.message || 'Error al cargar los eventos';
+    const { data: dbEventos, error: dbError } = await query.order('fecha', { ascending: true });
+
+    if (dbError) {
+      errorMsg = 'Error al cargar los eventos desde Supabase';
     } else {
-      eventos = json.data || [];
+      eventos = dbEventos || [];
     }
   } catch {
-    errorMsg = 'No se pudo conectar con el servidor.';
+    errorMsg = 'No se pudo conectar con la base de datos.';
   }
 
   return (
@@ -87,6 +96,7 @@ export default async function HomePage({
                   <p className="text-xs text-white/70">Ubicación</p>
                   <select
                     name="ubicacion"
+                    defaultValue={ubicacion}
                     className="bg-transparent outline-none w-full text-white font-medium"
                   >
                     <option value="">Todas las ubicaciones</option>
@@ -106,6 +116,7 @@ export default async function HomePage({
                   <input
                     type="date"
                     name="fecha"
+                    defaultValue={fecha}
                     className="bg-transparent outline-none w-full text-white"
                   />
                 </div>
@@ -160,7 +171,7 @@ export default async function HomePage({
               >
                 <div className="relative h-56 bg-zinc-800">
                   <Image
-                    src={`https://picsum.photos/id/${Math.floor(Math.random() * 200)}/600/400`}
+                    src={`https://picsum.photos/seed/${evento.id}/600/400`}
                     alt={evento.titulo}
                     fill
                     className="object-cover group-hover:scale-105 transition duration-300"
