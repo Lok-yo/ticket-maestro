@@ -32,8 +32,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (authError || !authData.user) {
+      const isEmailOContraseña = authError?.message === 'Invalid login credentials';
       return NextResponse.json<ApiResponse<null>>(
-        { error: 'Email o contraseña incorrectos' },
+        { error: isEmailOContraseña ? 'Email o contraseña incorrectos' : authError?.message || 'Error de autenticación' },
         { status: 401 }
       );
     }
