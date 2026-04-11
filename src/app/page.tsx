@@ -1,18 +1,21 @@
 // src/app/page.tsx
 import Image from 'next/image';
+import Link from 'next/link';
 import Navbar from '../Components/layout/Navbar';
+import { SearchForm } from '../Components/ui/SearchForm';
 import { createClient } from '@/lib/supabase/server';
 import type { Evento, ApiResponse, Usuario } from '@/types';
 
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; ubicacion?: string; fecha?: string }>;
+  searchParams: Promise<{ search?: string; ubicacion?: string; fecha?: string; fechaFin?: string }>;
 }) {
   const params = await searchParams;
   const searchTerm = params.search?.trim() || '';
   const ubicacion = params.ubicacion || '';
   const fecha = params.fecha || '';
+  const fechaFin = params.fechaFin || '';
 
   // ✅ Obtener usuario directamente desde Supabase (lee las cookies correctamente)
   let user: Usuario | null = null;
@@ -53,6 +56,9 @@ export default async function HomePage({
     if (fecha) {
       query = query.gte('fecha', fecha);
     }
+    if (fechaFin) {
+      query = query.lte('fecha', fechaFin + 'T23:59:59');
+    }
 
     const { data: dbEventos, error: dbError } = await query.order('fecha', { ascending: true });
 
@@ -70,88 +76,35 @@ export default async function HomePage({
       <Navbar user={user} />
 
       {/* Hero con filtro */}
-      <section className="relative h-[620px] flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 bg-black/60 z-10" />
-        
-        <Image
-          src="https://images.unsplash.com/photo-1516450360452-9312f5e86fc7"
-          alt="Grupo musical"
-          fill
-          className="object-cover"
-          priority
-        />
+      <section className="relative h-[620px] flex items-center justify-center">
+        <div className="absolute inset-0 overflow-hidden">
+           <div className="absolute inset-0 bg-black/60 z-10" />
+           <Image
+             src="https://images.unsplash.com/photo-1516450360452-9312f5e86fc7"
+             alt="Grupo musical"
+             fill
+             className="object-cover"
+             priority
+           />
+        </div>
 
         <div className="relative z-20 text-center px-6 max-w-5xl mx-auto">
           <h1 className="text-5xl md:text-6xl font-bold mb-8 leading-tight">
             ANTICIPA TUS BOLETOS
           </h1>
 
-          <form className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-2 max-w-4xl mx-auto">
-            <div className="flex flex-col md:flex-row gap-2 bg-white/5 rounded-3xl p-2">
-
-              {/* Ubicación */}
-              <div className="flex-1 flex items-center gap-3 bg-white/10 rounded-2xl px-6 py-4">
-                <span className="text-2xl">📍</span>
-                <div className="flex-1">
-                  <p className="text-xs text-white/70">Ubicación</p>
-                  <select
-                    name="ubicacion"
-                    defaultValue={ubicacion}
-                    className="bg-transparent outline-none w-full text-white font-medium"
-                  >
-                    <option value="">Todas las ubicaciones</option>
-                    <option value="SLP">San Luis Potosí</option>
-                    <option value="CDMX">Ciudad de México</option>
-                    <option value="GDL">Guadalajara</option>
-                    <option value="MTY">Monterrey</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Fecha */}
-              <div className="flex-1 flex items-center gap-3 bg-white/10 rounded-2xl px-6 py-4">
-                <span className="text-2xl">📅</span>
-                <div className="flex-1">
-                  <p className="text-xs text-white/70">Fecha</p>
-                  <input
-                    type="date"
-                    name="fecha"
-                    defaultValue={fecha}
-                    className="bg-transparent outline-none w-full text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Artista / Evento */}
-              <div className="flex-1 flex items-center gap-3 bg-white/10 rounded-2xl px-6 py-4">
-                <span className="text-2xl">🎤</span>
-                <div className="flex-1">
-                  <p className="text-xs text-white/70">Artista o evento</p>
-                  <input
-                    name="search"
-                    defaultValue={searchTerm}
-                    placeholder="Buscar artista o evento"
-                    className="bg-transparent outline-none w-full placeholder:text-white/60"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="bg-[#e91e63] hover:bg-[#c2185b] transition px-12 py-4 rounded-2xl font-semibold flex items-center gap-3 text-lg"
-              >
-                Buscar
-                <span className="text-2xl">🔍</span>
-              </button>
-            </div>
-          </form>
+          <SearchForm 
+             initialUbicacion={ubicacion} 
+             initialFecha={fecha} 
+             initialSearch={searchTerm} 
+          />
         </div>
       </section>
 
       {/* Eventos */}
       <section className="max-w-7xl mx-auto px-6 py-16">
         <h2 className="text-4xl font-bold mb-10">
-          {searchTerm ? 'Resultados' : 'Anticipa tus boletos'}
+          {(searchTerm || ubicacion || fecha) ? 'Resultados' : 'Anticipa tus boletos'}
         </h2>
 
         {errorMsg && (
@@ -161,13 +114,14 @@ export default async function HomePage({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {eventos.length === 0 && !errorMsg ? (
             <p className="col-span-4 text-center text-gray-400 py-12 text-lg">
-              {searchTerm ? 'No se encontraron eventos' : 'Cargando eventos...'}
+              {(searchTerm || ubicacion || fecha) ? 'No se encontraron eventos con estos filtros.' : 'No hay eventos disponibles en este momento.'}
             </p>
           ) : (
             eventos.map((evento) => (
-              <div
+              <Link
+                href={`/evento/${evento.id}`}
                 key={evento.id}
-                className="bg-zinc-900 rounded-2xl overflow-hidden group hover:shadow-2xl transition-all duration-300"
+                className="bg-zinc-900 rounded-2xl overflow-hidden group hover:shadow-2xl transition-all duration-300 block"
               >
                 <div className="relative h-56 bg-zinc-800">
                   <Image
@@ -189,7 +143,7 @@ export default async function HomePage({
                     })}
                   </p>
                 </div>
-              </div>
+              </Link>
             ))
           )}
         </div>

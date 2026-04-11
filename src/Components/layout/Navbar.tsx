@@ -4,6 +4,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Search, Info, LogIn, UserPlus } from 'lucide-react';
 
 type Usuario = {
   id: string;
@@ -16,10 +18,35 @@ type NavbarProps = {
   user: Usuario | null;
 };
 
-export default function Navbar({ user }: NavbarProps) {
+export default function Navbar({ user: initialUser }: NavbarProps) {
   const router = useRouter();
+  const [user, setUser] = useState<Usuario | null>(initialUser);
+  const [loading, setLoading] = useState(!initialUser); // Iniciamos en loading si no hay initialUser
   const [menuAbierto, setMenuAbierto] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialUser) return;
+    
+    let isMounted = true;
+    const fetchUser = async () => {
+      try {
+          const supabase = createClient();
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          if (authUser && isMounted) {
+             const { data, error } = await supabase.from('usuario').select('*').eq('id', authUser.id).single();
+             if (!error && data) {
+                 setUser(data as Usuario);
+             }
+          }
+      } finally {
+          if (isMounted) setLoading(false);
+      }
+    };
+    fetchUser();
+    
+    return () => { isMounted = false; };
+  }, [initialUser]);
 
   // Cerrar el menú si se hace click fuera
   useEffect(() => {
@@ -34,10 +61,13 @@ export default function Navbar({ user }: NavbarProps) {
 
   async function handleLogout() {
     try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {
       // ignorar error de red
     }
+    setUser(null);
     setMenuAbierto(false);
     router.push('/');
     router.refresh(); // refresca el servidor para limpiar el estado del usuario
@@ -47,34 +77,51 @@ export default function Navbar({ user }: NavbarProps) {
     <nav className="bg-[#e91e63] sticky top-0 z-50 shadow-md">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
 
-        {/* LOGO */}
-        <Link href="/" className="flex items-center hover:scale-105 transition">
-          <Image
-            src="/11.png"
-            alt="TicketMaestro"
-            width={380}
-            height={110}
-            className="object-contain h-20"
-            priority
-          />
-        </Link>
+        {/* LOGO (Left side) */}
+        <div className="flex-1">
+          <Link href="/" className="inline-flex items-center hover:scale-105 transition">
+            <Image
+              src="/11.png"
+              alt="TicketMaestro"
+              width={380}
+              height={110}
+              className="object-contain h-20"
+              priority
+            />
+          </Link>
+        </div>
 
-        {/* Menú de navegación */}
-        <div className="hidden md:flex items-center gap-8 text-sm font-medium">
-          <Link href="/" className="hover:text-pink-100 hover:bg-white/10 px-4 py-2 rounded-xl transition">
-            Inicio
-          </Link>
-          <Link href="/events" className="hover:text-pink-100 hover:bg-white/10 px-4 py-2 rounded-xl transition">
+        {/* Menú de navegación (Absolute Center) */}
+        <div className="hidden md:flex items-center justify-center gap-4 text-sm font-bold shrink-0">
+          <button 
+            onClick={() => {
+              if(window.location.pathname !== '/') {
+                 router.push('/#searchInput');
+                 setTimeout(() => {
+                   document.getElementById('searchInput')?.scrollIntoView({behavior: 'smooth', block: 'center'});
+                   document.getElementById('searchInput')?.focus();
+                 }, 800);
+              } else {
+                 document.getElementById('searchInput')?.scrollIntoView({behavior: 'smooth', block: 'center'});
+                 document.getElementById('searchInput')?.focus();
+              }
+            }} 
+            className="flex items-center gap-2 hover:bg-white/20 border border-white/20 px-5 py-2.5 rounded-full transition cursor-pointer text-white"
+          >
+            <Search className="w-4 h-4" />
             Buscar
-          </Link>
-          <Link href="/about" className="hover:text-pink-100 hover:bg-white/10 px-4 py-2 rounded-xl transition">
+          </button>
+          <Link href="/about" className="flex items-center gap-2 hover:bg-white/20 border border-white/20 px-5 py-2.5 rounded-full transition text-white">
+            <Info className="w-4 h-4" />
             Acerca de
           </Link>
         </div>
 
-        {/* Área derecha */}
-        <div className="flex items-center gap-4">
-          {user ? (
+        {/* Área derecha (Right side) */}
+        <div className="flex-1 flex items-center justify-end gap-3">
+          {loading ? (
+             <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white animate-spin"></div>
+          ) : user ? (
             /* Usuario LOGUEADO → menú desplegable */
             <div className="relative" ref={menuRef}>
               <button
@@ -165,20 +212,22 @@ export default function Navbar({ user }: NavbarProps) {
             </div>
           ) : (
             /* Usuario NO logueado → botones normales */
-            <>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
               <Link
                 href="/auth/login"
-                className="px-5 py-2 text-sm font-medium hover:bg-pink-700 hover:text-white rounded-full transition"
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold border border-white/20 hover:bg-white/10 hover:border-white/50 text-white rounded-full transition cursor-pointer"
               >
+                <LogIn className="w-4 h-4"/>
                 Inicio de sesión
               </Link>
               <Link
                 href="/auth/register"
-                className="px-6 py-2 bg-white text-black text-sm font-semibold rounded-full hover:bg-pink-100 transition"
+                className="flex items-center gap-2 px-6 py-2.5 bg-white text-[#e91e63] shadow-[0_0_15px_rgba(255,255,255,0.4)] text-sm font-bold rounded-full hover:bg-pink-50 hover:scale-105 transition active:scale-95 cursor-pointer"
               >
+                <UserPlus className="w-4 h-4"/>
                 Regístrate
               </Link>
-            </>
+            </div>
           )}
         </div>
       </div>

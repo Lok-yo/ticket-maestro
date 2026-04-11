@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'cliente'
+export type UserRole = 'admin' | 'cliente' | 'organizador'
 export type EventStatus = 'activo' | 'cancelado' | 'finalizado'
 export type TicketStatus = 'disponible' | 'vendido' | 'reservado'
 export type PaymentMethod = 'tarjeta' | 'transferencia' | 'efectivo'
