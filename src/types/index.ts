@@ -31,6 +31,9 @@ export interface Evento {
   descripcion: string
   categoria_id: string
   categoria?: Categoria
+  organizador_id?: string
+  precio_base?: number
+  imagen?: string
 }
 
 export interface Boleto {

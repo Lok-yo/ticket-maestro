@@ -6,10 +6,10 @@ import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const UBICACIONES = [
   { value: '', label: 'Todas las ubicaciones' },
-  { value: 'SLP', label: 'San Luis Potosí' },
-  { value: 'CDMX', label: 'Ciudad de México' },
-  { value: 'GDL', label: 'Guadalajara' },
-  { value: 'MTY', label: 'Monterrey' },
+  { value: 'San Luis Potosí', label: 'San Luis Potosí' },
+  { value: 'Ciudad de México', label: 'Ciudad de México' },
+  { value: 'Guadalajara', label: 'Guadalajara' },
+  { value: 'Monterrey', label: 'Monterrey' },
 ];
 
 export function SearchForm({ 

@@ -62,9 +62,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar rol
-    const role = user.user_metadata?.role
-    if (role !== 'organizer' && role !== 'admin') {
+    // Verificar rol directamente en la tabla pública para máxima seguridad
+    const { data: usuarioDb } = await supabase.from('usuario').select('rol').eq('id', user.id).single();
+    const role = usuarioDb?.rol;
+
+    if (role !== 'organizador' && role !== 'admin') {
       return NextResponse.json<ApiResponse<null>>(
         { error: 'Solo organizadores pueden crear eventos' },
         { status: 403 }
@@ -81,18 +83,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { titulo, descripcion, ubicacion, fecha, capacidad, categoria_id } = validation.data
+    const { titulo, descripcion, ubicacion, fecha, capacidad, categoria_id, precio_base, imagen } = validation.data
+
+    const evtId = `EVT-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
     const { data, error } = await supabase
       .from('evento')
       .insert({
+        id: evtId,
         titulo,
         descripcion,
         ubicacion,
         fecha,
         capacidad,
         categoria_id,
-        estado: 'draft',
+        precio_base,
+        imagen: imagen ? imagen : null,
+        organizador_id: user.id, // Amarrado fuertemente al autor
+        estado: 'activo', // Publicado directo para la demo, pero antes era 'draft'
       })
       .select()
       .single()

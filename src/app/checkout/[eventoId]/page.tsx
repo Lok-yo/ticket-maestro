@@ -9,8 +9,8 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import Navbar from '@/Components/layout/Navbar';
 import { createClient } from '@/lib/supabase/client';
 
-// Clave pública de prueba de Stripe
-const stripePromise = loadStripe('pk_test_TYooMQauvdEDq54NiTphI7jx');
+// Clave pública de tu cuenta de Stripe (Debe coincidir con el Secret Key del backend)
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_TYooMQauvdEDq54NiTphI7jx');
 
 function CheckoutFormContent() {
   const router = useRouter();
@@ -82,45 +82,61 @@ function CheckoutFormContent() {
     setIsProcessing(true);
     setPaymentError('');
 
-    // SIMULACION: Esperamos 2 segundos para dar el efecto de procesamiento
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Como es mock, no generamos PaymentIntent real al servidor, 
-    // asumimos que pasó directamente a cuenta del demo.
-    const cardElement = elements.getElement(CardElement);
-    
-    if (cardElement) {
-        const { error, paymentMethod } = await stripe.createPaymentMethod({
-            type: 'card',
-            card: cardElement,
-            billing_details: {
+    try {
+        // 1. Llamada a backend para registrar Orden y generar PaymentIntent
+        const checkRes = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                eventId,
+                type,
+                qty,
                 name: formData.name,
                 email: formData.email,
-            },
+                phone: formData.phone,
+                price // <-- Añadido
+            })
         });
 
-        if (error) {
-            setPaymentError(error.message || 'Error en el pago');
-            setIsProcessing(false);
-            return;
+        const checkData = await checkRes.json();
+
+        if (!checkRes.ok) {
+            throw new Error(checkData.error || 'Error al iniciar la transacción.');
         }
 
-        // Si es exitoso, navegamos a confirmación con datos codificados
-        // En un entorno real se haría `const { error } = await stripe.confirmCardPayment(...)`
-        setIsProcessing(false);
-        const orderId = `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+        const { clientSecret, ordenId } = checkData;
+
+        const cardElement = elements.getElement(CardElement);
+        if (!cardElement) throw new Error("Elemento de tarjeta no encontrado.");
         
-        // Pasamos datos en URL para la demo (en producción se leería la OrdenBD)
+        // 2. Autorizar pago directo con Stripe securely
+        const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+            payment_method: {
+                card: cardElement,
+                billing_details: {
+                    name: formData.name,
+                    email: formData.email,
+                },
+            }
+        });
+
+        if (stripeError) {
+            throw new Error(stripeError.message || 'Su tarjeta fue rechazada.');
+        }
+
+        // Si el pago es exitoso, el Webhook en /api/webhooks/stripe es el que confirmará
+        // la entrada en BD. Nosotros navegamos confiando en el intent successful.
+        setIsProcessing(false);
         const successUrl = new URLSearchParams({
-            eventId,
             title: eventTitle,
             type,
             qty: qty.toString(),
             total: total.toString(),
             name: formData.name
         });
-        router.push(`/compra-exitosa/${orderId}?${successUrl.toString()}`);
-    } else {
+        router.push(`/compra-exitosa/${ordenId}?${successUrl.toString()}`);
+    } catch (error: any) {
+        setPaymentError(error.message);
         setIsProcessing(false);
     }
   };

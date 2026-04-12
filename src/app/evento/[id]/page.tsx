@@ -5,12 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Calendar, MapPin, Users, Info, ChevronLeft } from 'lucide-react';
 import Navbar from '@/Components/layout/Navbar';
+import { createClient } from '@/lib/supabase/client';
 
-// Tipos de boletos simulados (Precios MXN)
-const TICKET_TYPES = [
-  { id: 'general', name: 'General', price: 800, maxQty: 10, description: 'Acceso a zona general de pie.' },
-  { id: 'preferente', name: 'Preferente', price: 1500, maxQty: 5, description: 'Asientos no numerados cerca del escenario.' },
-  { id: 'vip', name: 'VIP', price: 2500, maxQty: 2, description: 'Acceso exclusivo, bebidas de cortesía y asientos VIP.' },
+// Función para generar tipos de boletos en base al precio real del evento
+const getTicketTypes = (basePrice: number) => [
+  { id: 'general', name: 'General', price: basePrice, maxQty: 10, description: 'Acceso a zona general.' },
+  { id: 'preferente', name: 'Preferente', price: Math.round(basePrice * 1.5), maxQty: 5, description: 'Mejor vista y acceso preferencial.' },
+  { id: 'vip', name: 'VIP', price: Math.round(basePrice * 2.5), maxQty: 2, description: 'Acceso exclusivo y amenidades VIP.' },
 ];
 
 export default function EventDetailPage() {
@@ -20,26 +21,34 @@ export default function EventDetailPage() {
   
   // Variables simuladas (en producción esto vendría de Supabase usando el eventId)
   const [eventData, setEventData] = useState<any>(null);
+  const [ticketTypes, setTicketTypes] = useState<any[]>([]);
+  const [selectedType, setSelectedType] = useState<any>(null);
   
-  const [selectedType, setSelectedType] = useState(TICKET_TYPES[0]);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulamos carga
-    setTimeout(() => {
-      setEventData({
-        id: eventId,
-        titulo: 'Festival Gira 2026',
-        fecha: '2026-10-15',
-        ubicacion: 'CDMX - Estadio Nacional',
-        capacidad: 50000,
-        descripcion: 'El evento musical del año. Vive la experiencia definitiva con los mejores artistas internacionales en el Estadio Nacional. Un espectáculo audiovisual que no querrás perderte.',
-        imageUrl: `https://picsum.photos/seed/${eventId}/1200/600`
-      });
-      setLoading(false);
-    }, 800);
-  }, [eventId]);
+    const fetchEvent = async () => {
+      const supabase = createClient();
+      try {
+          const { data, error } = await supabase.from('evento').select('*').eq('id', eventId).single();
+          if (data && !error) {
+              setEventData(data);
+              const tTypes = getTicketTypes(data.precio_base || 800);
+              setTicketTypes(tTypes);
+              setSelectedType(tTypes[0]);
+          } else {
+             // Redirigir a home o mostrar error si no existe
+             router.push('/');
+          }
+      } catch (e) {
+          router.push('/');
+      } finally {
+          setLoading(false);
+      }
+    };
+    fetchEvent();
+  }, [eventId, router]);
 
   const handleBuy = () => {
     const searchParams = new URLSearchParams({
@@ -69,12 +78,10 @@ export default function EventDetailPage() {
       <section className="relative h-[50vh] md:h-[60vh] flex items-end pb-12 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-[#1a1625] via-black/50 to-transparent z-10" />
         
-        <Image
-          src={eventData.imageUrl}
+        <img
+          src={eventData.imagen || `https://picsum.photos/seed/${eventId}/1200/600`}
           alt={eventData.titulo}
-          fill
-          className="object-cover"
-          priority
+          className="absolute inset-0 w-full h-full object-cover"
         />
 
         <div className="relative z-20 px-6 max-w-7xl mx-auto w-full">
@@ -144,7 +151,7 @@ export default function EventDetailPage() {
             
             {/* Ticket Types */}
             <div className="space-y-4 mb-8">
-              {TICKET_TYPES.map((type) => (
+              {ticketTypes.map((type) => (
                 <button
                   key={type.id}
                   onClick={() => {

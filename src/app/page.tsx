@@ -125,7 +125,7 @@ export default async function HomePage({
               >
                 <div className="relative h-56 bg-zinc-800">
                   <Image
-                    src={`https://picsum.photos/seed/${evento.id}/600/400`}
+                    src={evento.imagen || `https://picsum.photos/seed/${evento.id}/600/400`}
                     alt={evento.titulo}
                     fill
                     className="object-cover group-hover:scale-105 transition duration-300"

@@ -100,7 +100,9 @@ export default async function AboutPage() {
                      ¿Eres promotor o creador de eventos?
                   </h3>
                   <p className="text-gray-300 text-sm mb-4 leading-relaxed">
-                     Únete a la nueva era del entretenimiento en México. Si deseas obtener una cuenta de <span className="font-bold text-white">Organizador</span> para publicar tus eventos y facturar en nuestra plataforma, aplica hoy mismo.
+                     Únete a la gran red de entretenimiento. Mándanos tu nombre, empresa y tipo de eventos que haces para obtener una cuenta verificada de <span className="font-bold text-white tracking-widest uppercase">Organizador</span>.
+                     <br/><br/>
+                     <span className="text-xs opacity-70">⚡ Aprobaciones en menos de 24 horas. Cero comisiones de apertura.</span>
                   </p>
                   <a href="mailto:organizador@ticketmaestro.com" className="inline-block bg-pink-500 hover:bg-pink-600 transition px-6 py-2.5 rounded-full text-white font-bold text-sm shadow-lg shadow-pink-500/30">
                      Enviar solicitud por correo

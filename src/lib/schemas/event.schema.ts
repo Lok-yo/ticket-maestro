@@ -25,6 +25,15 @@ export const createEventSchema = z.object({
   categoria_id: z
     .string()
     .min(1, 'La categoría es requerida'),
+  precio_base: z
+    .number()
+    .min(0, 'El precio no puede ser negativo')
+    .max(1000000, 'El precio es demasiado alto'),
+  imagen: z
+    .string()
+    .url('Debe ser una URL válida')
+    .optional()
+    .or(z.literal('')),
 })
 
 export const updateEventSchema = createEventSchema.partial().extend({

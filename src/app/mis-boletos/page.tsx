@@ -23,33 +23,61 @@ export default async function MisBoletosPage() {
   
   user = data as Usuario;
 
-  // En un entorno de producción, aquí haríamos:
-  // supabase.from('boleto').select('*, evento(*)').eq('usuario_id', authUser.id)
+  // Consulta real a Supabase
+  // Extraemos las órdenes del usuario, sus boletos, y el evento de cada boleto
+  const { data: ordenes, error: dbError } = await supabase
+    .from('orden')
+    .select(`
+      id,
+      total,
+      fecha,
+      boleto (
+        id,
+        codigo_qr,
+        precio,
+        tipo,
+        estado,
+        evento (
+          titulo,
+          fecha,
+          ubicacion
+        )
+      )
+    `)
+    .eq('usuario_id', authUser.id)
+    .order('fecha', { ascending: false });
+
+  // Aplanar la estructura: De un arreglo de Órdenes a un arreglo plano de Boletos
+  let ticketsReales: any[] = [];
   
-  // Como estamos implementando el front de acuerdo a la fase 4, 
-  // simularemos una respuesta de la API con los boletos del usuario.
-  const mockTickets = [
-    {
-      id: 'BKT-582910-1',
-      qrCodeString: 'https://ticket-maestro.com/verify/BKT-582910-1',
-      eventName: 'Festival Gira 2026',
-      date: '15 Octubre 2026',
-      location: 'Estadio Nacional',
-      type: 'General',
-      price: 800,
-      userName: user?.nombre || 'Usuario',
-    },
-    {
-      id: 'BKT-991203-1',
-      qrCodeString: 'https://ticket-maestro.com/verify/BKT-991203-1',
-      eventName: 'Teatro en Vivo: Los Miserables',
-      date: '22 Noviembre 2026',
-      location: 'Teatro de la Ciudad',
-      type: 'VIP',
-      price: 2500,
-      userName: user?.nombre || 'Usuario',
-    }
-  ];
+  if (ordenes) {
+    ordenes.forEach(orden => {
+      // Ignorar órdenes sin boletos por seguridad
+      if (!orden.boleto) return;
+      
+      // La respuesta de Supabase puede dar un arreglo de boletos (si compró varios en la misma orden)
+      const boletosArray = Array.isArray(orden.boleto) ? orden.boleto : [orden.boleto];
+      
+      boletosArray.forEach(boleto => {
+        // Formatear la fecha (Si evento existe)
+        const fechaEventoRaw = boleto.evento ? new Date(boleto.evento.fecha) : new Date();
+        const formatter = new Intl.DateTimeFormat('es-MX', { 
+            day: 'numeric', month: 'long', year: 'numeric' 
+        });
+
+        ticketsReales.push({
+          id: boleto.id,
+          qrCodeString: boleto.codigo_qr || `https://ticket-maestro.com/verify/${boleto.id}`, // Fallback al id temporal
+          eventName: boleto.evento ? boleto.evento.titulo : 'Evento Desconocido',
+          date: formatter.format(fechaEventoRaw),
+          location: boleto.evento ? boleto.evento.ubicacion : 'Por definir',
+          type: boleto.tipo,
+          price: boleto.precio,
+          userName: user?.nombre || 'Pasajero',
+        });
+      });
+    });
+  }
 
   return (
     <div className="min-h-screen bg-[#1a1625] text-white">
@@ -63,7 +91,7 @@ export default async function MisBoletosPage() {
            <p className="text-gray-400">Administra tus entradas y próximos eventos.</p>
         </div>
 
-        {mockTickets.length === 0 ? (
+        {ticketsReales.length === 0 ? (
           <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center">
             <Ticket className="w-16 h-16 text-gray-500 mx-auto mb-4 opacity-50"/>
             <h2 className="text-xl font-bold mb-2">Aún no tienes boletos</h2>
@@ -72,8 +100,8 @@ export default async function MisBoletosPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {mockTickets.map((ticket) => (
-              <TicketCard key={ticket.id} ticketData={ticket} />
+            {ticketsReales.map((ticket, index) => (
+              <TicketCard key={ticket.id + index.toString()} ticketData={ticket} />
             ))}
           </div>
         )}
