@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const { data: boleto, error } = await supabaseAdmin
+    const { data: boletoRaw, error } = await supabaseAdmin
       .from('boleto')
       .select(`
          id,
@@ -43,6 +43,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       `)
       .eq('id', ticketId)
       .single();
+
+    const boleto = boletoRaw as any;
 
     if (error || !boleto) {
         return NextResponse.json({ error: 'Boleto Inexistente o Falso.' }, { status: 404 });
@@ -79,7 +81,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     );
 
     // Verificamos antes de quemar
-    const { data: checkBoleto } = await supabaseAdmin.from('boleto').select('estado, evento(organizador_id)').eq('id', ticketId).single();
+    const { data: checkBoletoRaw } = await supabaseAdmin.from('boleto').select('estado, evento(organizador_id)').eq('id', ticketId).single();
+    const checkBoleto = checkBoletoRaw as any;
     
     if (!checkBoleto) return NextResponse.json({ error: 'Boleto Inexistente' }, { status: 404 });
     if (checkBoleto.estado === 'usado') return NextResponse.json({ error: 'Boleto YA FUE USADO.' }, { status: 400 });
