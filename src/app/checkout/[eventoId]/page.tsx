@@ -30,24 +30,32 @@ function CheckoutFormContent() {
   const [step, setStep] = useState(1); // 1: Datos Contacto, 2: Pago
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
   const [errors, setErrors] = useState({ name: '', email: '', phone: '' });
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    async function loadUser() {
+    async function checkAuthAndLoadUser() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase.from('usuario').select('*').eq('id', user.id).single();
-        if (profile) {
-          setFormData(prev => ({
-            ...prev,
-            name: profile.nombre || '',
-            email: profile.email || ''
-          }));
-        }
+      
+      if (!user) {
+        // No está logueado → redirigir al login con URL de retorno
+        const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+        router.push(`/auth/login?returnUrl=${returnUrl}`);
+        return;
       }
+      
+      const { data: profile } = await supabase.from('usuario').select('*').eq('id', user.id).single();
+      if (profile) {
+        setFormData(prev => ({
+          ...prev,
+          name: profile.nombre || '',
+          email: profile.email || ''
+        }));
+      }
+      setAuthChecked(true);
     }
-    loadUser();
-  }, []);
+    checkAuthAndLoadUser();
+  }, [router]);
 
   const stripe = useStripe();
   const elements = useElements();
@@ -146,13 +154,24 @@ function CheckoutFormContent() {
     router.push('/');
   };
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-[#1a1625] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Verificando sesión...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#1a1625] text-white">
       <Navbar user={null} />
 
-      <div className="max-w-5xl mx-auto px-6 py-12">
-        <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold">Checkout</h1>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold">Checkout</h1>
             <Timer initialMinutes={10} onExpire={handleExpire} eventKey={eventId} />
         </div>
 

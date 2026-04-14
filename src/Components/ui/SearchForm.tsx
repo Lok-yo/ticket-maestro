@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, MapPin, Calendar, Search as SearchIcon } from 'lucide-react';
 
 const UBICACIONES = [
   { value: '', label: 'Todas las ubicaciones' },
@@ -185,7 +185,7 @@ export function SearchForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-2 max-w-4xl mx-auto">
+    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-2 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row gap-2 bg-white/5 rounded-3xl p-2 relative">
 
         {/* Ubicación (Custom Dropdown) */}
@@ -193,9 +193,11 @@ export function SearchForm({
              onClick={() => setIsLocationOpen(!isLocationOpen)}
              ref={dropdownRef}
         >
-          <span className="text-2xl">📍</span>
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500/20 text-pink-500 shrink-0">
+             <MapPin className="w-5 h-5" />
+          </div>
           <div className="flex-1 select-none flex items-center justify-between">
-             <div>
+             <div className="text-left">
                 <p className="text-xs text-white/70">Ubicación</p>
                 <div className="text-white font-bold truncate">{selectedLocation.label}</div>
              </div>
@@ -232,9 +234,11 @@ export function SearchForm({
              onClick={() => setIsDateOpen(!isDateOpen)}
              ref={dateRef}
         >
-          <span className="text-2xl">📅</span>
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500/20 text-pink-500 shrink-0">
+             <Calendar className="w-5 h-5" />
+          </div>
           <div className="flex-1 select-none flex items-center justify-between">
-             <div className="overflow-hidden">
+             <div className="overflow-hidden text-left">
                 <p className="text-xs text-white/70">Fechas</p>
                 <div className="text-white font-bold truncate">
                    {formatDisplayDate()}
@@ -310,9 +314,11 @@ export function SearchForm({
         </div>
 
         {/* Artista / Evento */}
-        <div className="flex-1 flex items-center gap-3 bg-white/10 rounded-2xl px-6 py-4">
-          <span className="text-2xl">🎤</span>
-          <div className="flex-1 cursor-text" onClick={() => document.getElementById('searchInput')?.focus()}>
+        <div className="flex-[1.5] flex items-center gap-3 bg-white/10 rounded-2xl px-6 py-4">
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500/20 text-pink-500 shrink-0">
+             <SearchIcon className="w-5 h-5" />
+          </div>
+          <div className="flex-1 cursor-text text-left" onClick={() => document.getElementById('searchInput')?.focus()}>
             <p className="text-xs text-white/70">Buscar</p>
             <input
               id="searchInput"
@@ -329,7 +335,7 @@ export function SearchForm({
           className="bg-[#e91e63] hover:bg-[#c2185b] transition px-12 py-4 rounded-2xl font-semibold flex items-center justify-center gap-3 text-lg shadow-lg shadow-[#e91e63]/30"
         >
           Buscar
-          <span className="text-2xl">🔍</span>
+          <SearchIcon className="w-6 h-6" />
         </button>
       </div>
     </form>

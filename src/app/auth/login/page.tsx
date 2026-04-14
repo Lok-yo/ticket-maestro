@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { ApiResponse } from '@/types';
 
-export default function LoginPage() {
+function LoginFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnUrl = searchParams.get('returnUrl');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,8 +39,10 @@ export default function LoginPage() {
       // Primero refresh para que el servidor lea las cookies nuevas de Supabase
       router.refresh();
 
-      // Luego redirigir según el rol
-      if (json.data?.rol === 'admin') {
+      // Si hay returnUrl (ej: volver al checkout), redirigir allá
+      if (returnUrl) {
+        router.push(decodeURIComponent(returnUrl));
+      } else if (json.data?.rol === 'admin') {
         router.push('/admin/dashboard');
       } else {
         router.push('/');
@@ -143,5 +147,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">Cargando...</div>}>
+      <LoginFormContent />
+    </Suspense>
   );
 }
