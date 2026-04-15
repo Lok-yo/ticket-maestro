@@ -4,6 +4,7 @@ import Navbar from '@/Components/layout/Navbar';
 import Link from 'next/link';
 import { CalendarDays, Users, BarChart3, Plus, TrendingUp, Presentation } from 'lucide-react';
 import type { Usuario, Evento } from '@/types';
+import DeleteEventButton from '@/Components/ui/DeleteEventButton';
 
 // Desactivar caché para ver los eventos creados al vuelo
 export const dynamic = 'force-dynamic';
@@ -114,6 +115,7 @@ export default async function OrganizadorPage() {
                     Modificar
                  </div>
                  <div className="h-40 bg-zinc-800 relative">
+                    <DeleteEventButton eventId={evento.id} eventTitle={evento.titulo} />
                     <img 
                        src={evento.imagen || `https://picsum.photos/seed/${evento.id}/400/250`} 
                        alt={evento.titulo} 

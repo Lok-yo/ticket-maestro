@@ -34,7 +34,13 @@ export default function NuevoEventoPage() {
 
   // Estado especial para fecha y hora combinadas
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [timeStr, setTimeStr] = useState('20:00'); // Hora por defecto
+  
+  // States para la hora
+  const [hora, setHora] = useState('08');
+  const [minuto, setMinuto] = useState('00');
+  const [amPm, setAmPm] = useState('PM');
+  const [isTimeOpen, setIsTimeOpen] = useState(false);
+  const timeRef = useRef<HTMLDivElement>(null);
   
   // Estado para Popups
   const [isDateOpen, setIsDateOpen] = useState(false);
@@ -55,10 +61,13 @@ export default function NuevoEventoPage() {
     };
     fetchCats();
 
-    // Clic fuera para cerrar calendario
+    // Clic fuera para cerrar calendario y reloj
     function handleClickOutside(event: MouseEvent) {
       if (dateRef.current && !dateRef.current.contains(event.target as Node)) {
          setIsDateOpen(false);
+      }
+      if (timeRef.current && !timeRef.current.contains(event.target as Node)) {
+         setIsTimeOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -79,15 +88,26 @@ export default function NuevoEventoPage() {
        setErrorMsg("Debes seleccionar una fecha en el calendario.");
        return;
     }
+
+    if (formData.imagen && formData.imagen.startsWith('http')) {
+       // Validar que termine en png, jpg, jpeg, gif, webp, avif
+       if (!/\.(jpeg|jpg|gif|png|webp|avif)$/i.test(formData.imagen) && !formData.imagen.includes('imgur') && !formData.imagen.includes('picsum')) {
+           setErrorMsg("La URL de la imagen debe provenir de imgur o terminar en una extensión de imagen válida (.png, .jpg, etc).");
+           return;
+       }
+    }
     
     setLoading(true);
     setErrorMsg('');
 
     try {
       // Combinar Fecha visual con Hora para mandar a DB
-      const [hours, minutes] = timeStr.split(':');
+      let horasFinal = parseInt(hora);
+      if (amPm === 'PM' && horasFinal !== 12) horasFinal += 12;
+      if (amPm === 'AM' && horasFinal === 12) horasFinal = 0;
+      
       const finalDateTime = new Date(selectedDate);
-      finalDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+      finalDateTime.setHours(horasFinal, parseInt(minuto), 0, 0);
 
       const res = await fetch('/api/events', {
         method: 'POST',
@@ -306,31 +326,85 @@ export default function NuevoEventoPage() {
                        </div>
                    </div>
 
-                   <div className="space-y-2">
+                   {/* HORA CUSTOM PICKER */}
+                   <div className="space-y-2 relative" ref={timeRef}>
                        <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
                           <Clock className="w-4 h-4 text-purple-400"/> Hora
                        </label>
-                       <input 
-                         type="time" required
-                         value={timeStr} onChange={(e) => setTimeStr(e.target.value)}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-gray-300 [color-scheme:dark]"
-                       />
+                       
+                       <div 
+                           onClick={() => setIsTimeOpen(!isTimeOpen)}
+                           className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 cursor-pointer hover:border-pink-500 transition-all font-medium text-gray-300 flex items-center justify-between"
+                       >
+                           <span>{hora}:{minuto} {amPm}</span>
+                           <Clock className="w-5 h-5 text-gray-500"/>
+                       </div>
+
+                       {isTimeOpen && (
+                           <div className="absolute top-[105%] left-0 bg-[#221e30] border border-white/20 rounded-xl shadow-2xl p-4 z-50 flex gap-4 animate-in fade-in slide-in-from-top-2">
+                               {/* Select Hora */}
+                               <div className="h-48 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-1">
+                                   {Array.from({length: 12}).map((_, i) => {
+                                      let h = (i + 1).toString().padStart(2, '0');
+                                      return (
+                                          <button 
+                                              key={h} type="button" 
+                                              onClick={(e) => { e.stopPropagation(); setHora(h); }}
+                                              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all
+                                              ${hora === h ? 'bg-pink-500 text-white' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                                          >
+                                              {h}
+                                          </button>
+                                      )
+                                   })}
+                               </div>
+                               {/* Select Minuto */}
+                               <div className="h-48 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-1">
+                                   {['00', '15', '30', '45'].map((m) => (
+                                       <button 
+                                          key={m} type="button" 
+                                          onClick={(e) => { e.stopPropagation(); setMinuto(m); }}
+                                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all
+                                          ${minuto === m ? 'bg-pink-500 text-white' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                                       >
+                                          {m}
+                                       </button>
+                                   ))}
+                               </div>
+                               {/* AM/PM */}
+                               <div className="flex flex-col gap-2">
+                                   {['AM', 'PM'].map(a => (
+                                       <button 
+                                          key={a} type="button" 
+                                          onClick={(e) => { e.stopPropagation(); setAmPm(a); setIsTimeOpen(false); }}
+                                          className={`px-4 py-6 rounded-lg text-sm font-bold transition-all h-full flex items-center justify-center
+                                          ${amPm === a ? 'bg-purple-600 text-white' : 'bg-[#1a1625] text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                                       >
+                                          {a}
+                                       </button>
+                                   ))}
+                               </div>
+                           </div>
+                       )}
                    </div>
 
-                   {/* UBICACION - SELECTOR ELEGIBLE */}
+                   {/* UBICACION - ABIERTA (Datalist) */}
                    <div className="space-y-2">
                        <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-purple-400"/> Ubicación o Recinto
+                          <MapPin className="w-4 h-4 text-purple-400"/> Ubicación o Recinto exacto
                        </label>
-                       <select 
-                         name="ubicacion" required
+                       <input 
+                         type="text" name="ubicacion" required
+                         list="lista-ubicaciones"
+                         placeholder="Ej: Auditorio Nacional, CDMX"
                          value={formData.ubicacion} onChange={handleChange}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-white appearance-none cursor-pointer"
-                       >
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-white font-medium"
+                       />
+                       <datalist id="lista-ubicaciones">
                          {UBICACIONES.map(loc => (
-                            <option key={loc.value} value={loc.value}>{loc.label}</option>
+                            <option key={loc.value} value={loc.value} />
                          ))}
-                       </select>
+                       </datalist>
                    </div>
 
                    {/* CAPACIDAD */}
@@ -379,10 +453,10 @@ export default function NuevoEventoPage() {
                           Descripción (Opcional pero recomendada)
                        </label>
                        <textarea 
-                         name="descripcion" minLength={10} maxLength={1000}
+                         name="descripcion" maxLength={1000}
                          value={formData.descripcion} onChange={handleChange} rows={4}
                          placeholder="Escribe la sinopsis, reglas de edad, o información VIP..."
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all resize-none placeholder-gray-600"
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all resize-none placeholder-gray-600 text-white"
                        />
                    </div>
 

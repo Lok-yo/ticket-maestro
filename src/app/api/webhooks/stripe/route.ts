@@ -64,14 +64,49 @@ export async function POST(request: NextRequest) {
           .update({ estado: 'completed' })
           .eq('id', ordenId)
 
-        // Obtener boletos de la orden para generar QR
+        // Obtener boletos de la orden para generar QR y saber el organizador
         const { data: orden } = await supabase
           .from('orden')
           .select('*, boleto:boleto(*, evento:evento(*))')
           .eq('id', ordenId)
           .single()
 
-        if (!orden?.boleto) break
+        if (!orden?.boleto || orden.boleto.length === 0) break
+
+        const organizadorId = orden.boleto[0].evento.organizador_id;
+        
+        // Calcular monto retenido total en base a los boletos 
+        // (ya que no hicimos un select a la tabla pago, lo recalculamos o hacemos un select rápido)
+        const { data: pagoRegistrado } = await supabase
+          .from('pago')
+          .select('monto_retenido')
+          .eq('orden_id', ordenId)
+          .single();
+          
+        const montoRetenido = pagoRegistrado?.monto_retenido || 0;
+
+        // Sumar al Organizador
+        if (organizadorId && montoRetenido > 0) {
+            const { data: balanceActual } = await supabase
+               .from('balance_organizador')
+               .select('*')
+               .eq('organizador_id', organizadorId)
+               .single();
+
+            if (balanceActual) {
+               await supabase.from('balance_organizador').update({
+                  saldo_disponible: Number(balanceActual.saldo_disponible) + Number(montoRetenido),
+                  total_ganado: Number(balanceActual.total_ganado) + Number(montoRetenido),
+                  ultima_actualizacion: new Date().toISOString()
+               }).eq('organizador_id', organizadorId);
+            } else {
+               await supabase.from('balance_organizador').insert({
+                  organizador_id: organizadorId,
+                  saldo_disponible: Number(montoRetenido),
+                  total_ganado: Number(montoRetenido)
+               });
+            }
+        }
 
         // Generar QR seguro para cada boleto y confirmarlos
         for (const boleto of orden.boleto) {

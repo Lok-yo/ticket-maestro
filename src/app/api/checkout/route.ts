@@ -35,6 +35,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Evento no encontrado.' }, { status: 404 });
     }
 
+    // 1.5 Validar Capacidad Disponible
+    const { count: boletosVendidos, error: countError } = await supabase
+      .from('boleto')
+      .select('*', { count: 'exact', head: true })
+      .eq('evento_id', eventId)
+      .in('estado', ['reservado', 'vendido']);
+
+    if (countError) {
+      return NextResponse.json({ error: 'Error al verificar la disponibilidad de boletos.' }, { status: 500 });
+    }
+
+    const ocupados = boletosVendidos || 0;
+    if (ocupados + qty > evento.capacidad) {
+      const disponibles = evento.capacidad - ocupados;
+      return NextResponse.json({ 
+        error: `Capacidad agotada. Solo quedan ${disponibles > 0 ? disponibles : 0} boletos disponibles.` 
+      }, { status: 400 });
+    }
+
     // Usamos el precio real del boleto (determinado dinámicamente)
     const basePrice = parseFloat(price); 
     const subtotal = basePrice * qty;
