@@ -341,48 +341,59 @@ export default function NuevoEventoPage() {
                        </div>
 
                        {isTimeOpen && (
-                           <div className="absolute top-[105%] left-0 bg-[#221e30] border border-white/20 rounded-xl shadow-2xl p-4 z-50 flex gap-4 animate-in fade-in slide-in-from-top-2">
-                               {/* Select Hora */}
-                               <div className="h-48 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-1">
-                                   {Array.from({length: 12}).map((_, i) => {
-                                      let h = (i + 1).toString().padStart(2, '0');
-                                      return (
-                                          <button 
-                                              key={h} type="button" 
-                                              onClick={(e) => { e.stopPropagation(); setHora(h); }}
-                                              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all
-                                              ${hora === h ? 'bg-pink-500 text-white' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
-                                          >
-                                              {h}
-                                          </button>
-                                      )
-                                   })}
-                               </div>
-                               {/* Select Minuto */}
-                               <div className="h-48 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-1">
-                                   {['00', '15', '30', '45'].map((m) => (
-                                       <button 
-                                          key={m} type="button" 
-                                          onClick={(e) => { e.stopPropagation(); setMinuto(m); }}
-                                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all
-                                          ${minuto === m ? 'bg-pink-500 text-white' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
-                                       >
-                                          {m}
-                                       </button>
-                                   ))}
-                               </div>
-                               {/* AM/PM */}
-                               <div className="flex flex-col gap-2">
-                                   {['AM', 'PM'].map(a => (
-                                       <button 
-                                          key={a} type="button" 
-                                          onClick={(e) => { e.stopPropagation(); setAmPm(a); setIsTimeOpen(false); }}
-                                          className={`px-4 py-6 rounded-lg text-sm font-bold transition-all h-full flex items-center justify-center
-                                          ${amPm === a ? 'bg-purple-600 text-white' : 'bg-[#1a1625] text-gray-400 hover:bg-white/10 hover:text-white'}`}
-                                       >
-                                          {a}
-                                       </button>
-                                   ))}
+                           <div className="absolute top-[105%] left-0 bg-[#221e30] border border-white/20 rounded-2xl shadow-2xl p-5 z-50 animate-in fade-in slide-in-from-top-2">
+                               <div className="flex gap-6">
+                                   {/* Horas */}
+                                   <div>
+                                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center">Hora</p>
+                                       <div className="grid grid-cols-3 gap-1.5">
+                                           {Array.from({length: 12}).map((_, i) => {
+                                              let h = (i + 1).toString().padStart(2, '0');
+                                              return (
+                                                  <button 
+                                                      key={h} type="button" 
+                                                      onClick={(e) => { e.stopPropagation(); setHora(h); }}
+                                                      className={`w-10 h-10 rounded-lg text-sm font-bold transition-all flex items-center justify-center
+                                                      ${hora === h ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/30' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                                                  >
+                                                      {h}
+                                                  </button>
+                                              )
+                                           })}
+                                       </div>
+                                   </div>
+                                   {/* Minutos */}
+                                   <div>
+                                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center">Min</p>
+                                       <div className="grid grid-cols-2 gap-1.5">
+                                           {['00', '15', '30', '45'].map((m) => (
+                                               <button 
+                                                  key={m} type="button" 
+                                                  onClick={(e) => { e.stopPropagation(); setMinuto(m); }}
+                                                  className={`w-10 h-10 rounded-lg text-sm font-bold transition-all flex items-center justify-center
+                                                  ${minuto === m ? 'bg-pink-500 text-white shadow-lg shadow-pink-500/30' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                                               >
+                                                  {m}
+                                               </button>
+                                           ))}
+                                       </div>
+                                   </div>
+                                   {/* AM/PM */}
+                                   <div>
+                                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2 text-center">  </p>
+                                       <div className="flex flex-col gap-1.5">
+                                           {['AM', 'PM'].map(a => (
+                                               <button 
+                                                  key={a} type="button" 
+                                                  onClick={(e) => { e.stopPropagation(); setAmPm(a); setIsTimeOpen(false); }}
+                                                  className={`px-4 h-[calc(50%-3px)] min-h-[44px] rounded-lg text-sm font-bold transition-all flex items-center justify-center
+                                                  ${amPm === a ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'bg-[#1a1625] text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                                               >
+                                                  {a}
+                                               </button>
+                                           ))}
+                                       </div>
+                                   </div>
                                </div>
                            </div>
                        )}

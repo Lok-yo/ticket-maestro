@@ -7,8 +7,9 @@ export const createEventSchema = z.object({
     .max(100, 'El título no puede exceder 100 caracteres'),
   descripcion: z
     .string()
-    .min(10, 'La descripción debe tener al menos 10 caracteres')
-    .max(1000, 'La descripción no puede exceder 1000 caracteres'),
+    .max(1000, 'La descripción no puede exceder 1000 caracteres')
+    .optional()
+    .or(z.literal('')),
   ubicacion: z
     .string()
     .min(3, 'La ubicación debe tener al menos 3 caracteres'),

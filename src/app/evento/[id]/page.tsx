@@ -26,6 +26,8 @@ export default function EventDetailPage() {
   
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [soldOut, setSoldOut] = useState(false);
+  const [disponibles, setDisponibles] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -37,8 +39,21 @@ export default function EventDetailPage() {
               const tTypes = getTicketTypes(data.precio_base || 800);
               setTicketTypes(tTypes);
               setSelectedType(tTypes[0]);
+
+              // Verificar disponibilidad
+              const { count } = await supabase
+                .from('boleto')
+                .select('*', { count: 'exact', head: true })
+                .eq('evento_id', eventId)
+                .in('estado', ['vendido', 'reservado']);
+              
+              const ocupados = count || 0;
+              const restantes = data.capacidad - ocupados;
+              setDisponibles(restantes);
+              if (restantes <= 0) {
+                setSoldOut(true);
+              }
           } else {
-             // Redirigir a home o mostrar error si no existe
              router.push('/');
           }
       } catch (e) {
@@ -51,6 +66,7 @@ export default function EventDetailPage() {
   }, [eventId, router]);
 
   const handleBuy = () => {
+    if (soldOut) return;
     const searchParams = new URLSearchParams({
       type: selectedType.name,
       price: selectedType.price.toString(),
@@ -200,12 +216,31 @@ export default function EventDetailPage() {
               </div>
             </div>
 
+            {/* Sold Out Banner */}
+            {soldOut && (
+              <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-4 mb-6 text-center">
+                <p className="text-red-400 font-bold text-lg">🚫 Evento Agotado</p>
+                <p className="text-red-400/70 text-sm mt-1">Todos los boletos han sido vendidos.</p>
+              </div>
+            )}
+
+            {disponibles !== null && !soldOut && (
+              <p className="text-xs text-gray-400 mb-4 text-center">
+                Quedan <span className="text-pink-400 font-bold">{disponibles}</span> boletos disponibles
+              </p>
+            )}
+
             {/* CTA */}
             <button 
               onClick={handleBuy}
-              className="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 transition-all shadow-[0_0_20px_rgba(219,39,119,0.4)]"
+              disabled={soldOut}
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+                soldOut 
+                  ? 'bg-gray-600 cursor-not-allowed opacity-50' 
+                  : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 shadow-[0_0_20px_rgba(219,39,119,0.4)]'
+              }`}
             >
-              Comprar Boletos
+              {soldOut ? 'Agotado' : 'Comprar Boletos'}
             </button>
           </div>
         </div>
