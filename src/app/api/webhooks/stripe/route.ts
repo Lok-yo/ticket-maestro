@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
             .update({
               estado: 'vendido',
               codigo_qr: qrPayload,
+              fecha_emision: new Date().toISOString(),
             })
             .eq('id', boleto.id)
         }
