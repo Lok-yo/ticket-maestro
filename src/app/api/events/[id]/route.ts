@@ -65,8 +65,12 @@ export async function PUT(
     }
 
     // Solo tomamos los datos validados para hacer update (Parcial)
-    // El frontend mandará todos los campos de todos modos.
-    const updatePayload = validation.data;
+    const { tipos_boleto, ...updatePayload } = validation.data;
+
+    // Calcular precio_base a partir del tipo más barato si hay tipos de boleto
+    if (tipos_boleto && tipos_boleto.length > 0) {
+      (updatePayload as any).precio_base = Math.min(...tipos_boleto.map(t => t.precio));
+    }
 
     const { data, error } = await supabase
       .from('evento')
@@ -80,6 +84,48 @@ export async function PUT(
       .single()
 
     if (error) throw error
+
+    // Actualizar tipos de boleto si se proporcionaron
+    if (tipos_boleto && tipos_boleto.length > 0) {
+      // Obtener los tipos actuales para preservar el stock_disponible
+      const { data: tiposActuales } = await supabase
+        .from('tipo_boleto')
+        .select('*')
+        .eq('evento_id', eventoId);
+
+      // Borrar los tipos existentes y reinsertar con la nueva configuración
+      await supabase
+        .from('tipo_boleto')
+        .delete()
+        .eq('evento_id', eventoId);
+
+      const tiposToInsert = tipos_boleto.map(tipo => {
+        // Buscar si existía un tipo con el mismo nombre para preservar stock vendido
+        const tipoExistente = tiposActuales?.find(t => t.nombre === tipo.nombre);
+        const vendidos = tipoExistente 
+          ? tipoExistente.stock_total - tipoExistente.stock_disponible 
+          : 0;
+        
+        return {
+          evento_id: eventoId,
+          nombre: tipo.nombre,
+          precio: tipo.precio,
+          stock_total: tipo.stock_total,
+          // Preservar los boletos ya vendidos: nuevo disponible = nuevo total - ya vendidos
+          stock_disponible: Math.max(0, tipo.stock_total - vendidos),
+          descripcion: tipo.descripcion || null,
+          max_por_compra: tipo.max_por_compra || 10,
+        };
+      });
+
+      const { error: tiposError } = await supabase
+        .from('tipo_boleto')
+        .insert(tiposToInsert);
+
+      if (tiposError) {
+        console.error('Error actualizando tipos de boleto:', tiposError);
+      }
+    }
 
     return NextResponse.json<ApiResponse<Evento>>(
       { data, message: 'Evento actualizado exitosamente' },
@@ -149,7 +195,7 @@ export async function DELETE(
         }, { status: 400 })
     }
 
-    // 5. Hard Delete si está limpio
+    // 5. Hard Delete si está limpio (tipo_boleto se borra en cascada gracias al ON DELETE CASCADE)
     const { error: deleteError } = await supabase
        .from('evento')
        .delete()
@@ -170,4 +216,3 @@ export async function DELETE(
     )
   }
 }
-

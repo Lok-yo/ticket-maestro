@@ -3,20 +3,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/Components/layout/Navbar';
-import { Loader2, Music, MapPin, Calendar, Users, DollarSign, ArrowLeft, Image as ImageIcon, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { Loader2, Music, MapPin, Calendar, Users, DollarSign, ArrowLeft, Image as ImageIcon, ChevronLeft, ChevronRight, Clock, Ticket } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 
 const UBICACIONES = [
-  { value: 'San Luis Potosí', label: 'San Luis Potosí' },
-  { value: 'Ciudad de México', label: 'Ciudad de México' },
+  { value: 'San Luis Potosi', label: 'San Luis Potosi' },
+  { value: 'Ciudad de Mexico', label: 'Ciudad de Mexico' },
   { value: 'Guadalajara', label: 'Guadalajara' },
   { value: 'Monterrey', label: 'Monterrey' },
 ];
 
 export default function EditarEventoPage() {
   const router = useRouter();
-  const { id } = useParams(); // ID del evento en la URL
+  const { id } = useParams();
   const supabase = createClient();
   
   const [loading, setLoading] = useState(false);
@@ -28,93 +28,119 @@ export default function EditarEventoPage() {
     titulo: '',
     descripcion: '',
     ubicacion: UBICACIONES[0].value,
-    capacidad: 1000,
-    precio_base: 800,
     categoria_id: '',
     imagen: '',
   });
 
+  const [tiposBoleto, setTiposBoleto] = useState([
+    { nombre: 'General', precio: 800, stock_total: 200, descripcion: 'Acceso a zona general del evento.', max_por_compra: 10, enabled: true },
+    { nombre: 'Preferente', precio: 1200, stock_total: 50, descripcion: 'Mejor vista y acceso preferencial.', max_por_compra: 5, enabled: true },
+    { nombre: 'VIP', precio: 2000, stock_total: 10, descripcion: 'Acceso exclusivo y amenidades VIP.', max_por_compra: 2, enabled: true },
+  ]);
+
+  const capacidadTotal = tiposBoleto.filter(t => t.enabled).reduce((acc, t) => acc + t.stock_total, 0);
+
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [timeStr, setTimeStr] = useState('20:00');
-  
   const [isDateOpen, setIsDateOpen] = useState(false);
   const dateRef = useRef<HTMLDivElement>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
-    // Manejar clics fuera del pop de calendario
     function handleClickOutside(event: MouseEvent) {
-      if (dateRef.current && !dateRef.current.contains(event.target as Node)) {
-         setIsDateOpen(false);
-      }
+      if (dateRef.current && !dateRef.current.contains(event.target as Node)) setIsDateOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   useEffect(() => {
-    // 1. Cargar Metadatos y el Evento Original
     const fetchData = async () => {
       try {
           const { data: cats } = await supabase.from('categoria').select('*');
-          if (cats) {
-             setCategorias(cats);
-          }
+          if (cats) setCategorias(cats);
 
           if (typeof id === 'string') {
-             const { data: eventoInfo, error: evtError } = await supabase.from('evento').select('*').eq('id', id).single();
-             if (evtError || !eventoInfo) {
-                 setErrorMsg("No se encontró el evento o no tienes permisos.");
-             } else {
-                 // Rellenar Forularios
-                 setFormData({
-                    titulo: eventoInfo.titulo || '',
-                    descripcion: eventoInfo.descripcion || '',
-                    ubicacion: eventoInfo.ubicacion || UBICACIONES[0].value,
-                    capacidad: eventoInfo.capacidad || 1000,
-                    precio_base: eventoInfo.precio_base || 800,
-                    categoria_id: eventoInfo.categoria_id || (cats ? cats[0].id : ''),
-                    imagen: eventoInfo.imagen || '',
-                 });
+             // Fetch evento con tipos de boleto
+             const { data: eventoInfo, error: evtError } = await supabase
+               .from('evento')
+               .select('*, tipo_boleto(*)')
+               .eq('id', id)
+               .single();
 
-                 // Extraer la fecha y hora
-                 if (eventoInfo.fecha) {
-                    const parsedDate = new Date(eventoInfo.fecha);
-                    setSelectedDate(parsedDate);
-                    setCurrentMonth(parsedDate.getMonth());
-                    setCurrentYear(parsedDate.getFullYear());
-                    
-                    const hr = parsedDate.getHours().toString().padStart(2, '0');
-                    const min = parsedDate.getMinutes().toString().padStart(2, '0');
-                    setTimeStr(`${hr}:${min}`);
-                 }
+             if (evtError || !eventoInfo) {
+                setErrorMsg("No se encontro el evento o no tienes permisos.");
+             } else {
+                setFormData({
+                   titulo: eventoInfo.titulo || '',
+                   descripcion: eventoInfo.descripcion || '',
+                   ubicacion: eventoInfo.ubicacion || UBICACIONES[0].value,
+                   categoria_id: eventoInfo.categoria_id || (cats ? cats[0].id : ''),
+                   imagen: eventoInfo.imagen || '',
+                });
+
+                // Cargar tipos de boleto reales si existen
+                if (eventoInfo.tipo_boleto && eventoInfo.tipo_boleto.length > 0) {
+                  const defaultNames = ['General', 'Preferente', 'VIP'];
+                  const loadedTipos = defaultNames.map(name => {
+                    const found = eventoInfo.tipo_boleto.find((t: any) => t.nombre === name);
+                    if (found) {
+                      return {
+                        nombre: found.nombre,
+                        precio: Number(found.precio),
+                        stock_total: found.stock_total,
+                        descripcion: found.descripcion || '',
+                        max_por_compra: found.max_por_compra || 10,
+                        enabled: true,
+                      };
+                    }
+                    // Tipo no configurado para este evento
+                    return {
+                      nombre: name,
+                      precio: name === 'General' ? 800 : name === 'Preferente' ? 1200 : 2000,
+                      stock_total: 0,
+                      descripcion: '',
+                      max_por_compra: 10,
+                      enabled: false,
+                    };
+                  });
+                  setTiposBoleto(loadedTipos);
+                } else {
+                  // Legacy: usar precio_base para generar defaults
+                  const base = eventoInfo.precio_base || 800;
+                  const cap = eventoInfo.capacidad || 1000;
+                  setTiposBoleto([
+                    { nombre: 'General', precio: base, stock_total: Math.floor(cap * 0.75), descripcion: 'Acceso a zona general.', max_por_compra: 10, enabled: true },
+                    { nombre: 'Preferente', precio: Math.round(base * 1.5), stock_total: Math.floor(cap * 0.20), descripcion: 'Mejor vista y acceso preferencial.', max_por_compra: 5, enabled: true },
+                    { nombre: 'VIP', precio: Math.round(base * 2.5), stock_total: Math.floor(cap * 0.05), descripcion: 'Acceso exclusivo y amenidades VIP.', max_por_compra: 2, enabled: true },
+                  ]);
+                }
+
+                if (eventoInfo.fecha) {
+                   const parsedDate = new Date(eventoInfo.fecha);
+                   setSelectedDate(parsedDate);
+                   setCurrentMonth(parsedDate.getMonth());
+                   setCurrentYear(parsedDate.getFullYear());
+                   const hr = parsedDate.getHours().toString().padStart(2, '0');
+                   const min = parsedDate.getMinutes().toString().padStart(2, '0');
+                   setTimeStr(`${hr}:${min}`);
+                }
              }
           }
-      } catch (err: any) {
-          setErrorMsg(err.message || 'Error de conexión');
-      } finally {
-          setInitialLoading(false);
-      }
+      } catch (err: any) { setErrorMsg(err.message || 'Error de conexion'); } finally { setInitialLoading(false); }
     };
     fetchData();
   }, [supabase, id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' ? Number(value) : value
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDate) {
-       setErrorMsg("Debes seleccionar una fecha en el calendario.");
-       return;
-    }
-    
+    if (!selectedDate) { setErrorMsg("Debes seleccionar una fecha."); return; }
     setLoading(true);
     setErrorMsg('');
 
@@ -123,33 +149,30 @@ export default function EditarEventoPage() {
       const finalDateTime = new Date(selectedDate);
       finalDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
 
-      // MANDAR EL UPDATE POR PUT A NUESTRA API
+      const tiposActivos = tiposBoleto.filter(t => t.enabled);
+      if (tiposActivos.length === 0) { setErrorMsg('Debes habilitar al menos un tipo de boleto.'); setLoading(false); return; }
+
       const res = await fetch(`/api/events/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             ...formData,
-            fecha: finalDateTime.toISOString()
+            capacidad: capacidadTotal,
+            precio_base: Math.min(...tiposActivos.map(t => t.precio)),
+            fecha: finalDateTime.toISOString(),
+            tipos_boleto: tiposActivos.map(t => ({
+              nombre: t.nombre, precio: t.precio, stock_total: t.stock_total,
+              descripcion: t.descripcion, max_por_compra: t.max_por_compra,
+            })),
         }),
       });
-
       const json = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(json.error || 'Error desconocido al actualizar');
-      }
-
+      if (!res.ok) throw new Error(json.error || 'Error desconocido al actualizar');
       router.push('/organizador');
       router.refresh(); 
-
-    } catch (err: any) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) { setErrorMsg(err.message); } finally { setLoading(false); }
   };
 
-  // --- LOGICA DE CALENDARIO CUSTOM ---
   const advanceMonth = (offset: number) => {
       let newMonth = currentMonth + offset;
       let newYear = currentYear;
@@ -162,57 +185,32 @@ export default function EditarEventoPage() {
   const renderMonthGrid = () => {
       const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
       const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
-      const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-
-      const grid = [];
+      const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+      const grid: (number|null)[] = [];
       for (let i = 0; i < firstDayOfMonth; i++) grid.push(null);
       for (let i = 1; i <= daysInMonth; i++) grid.push(i);
-
       return (
          <div className="w-full">
             <div className="flex justify-between items-center mb-6">
-               <button type="button" onClick={(e) => { e.stopPropagation(); advanceMonth(-1); }} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-300 transition">
-                 <ChevronLeft className="w-5 h-5"/>
-               </button>
+               <button type="button" onClick={(e) => { e.stopPropagation(); advanceMonth(-1); }} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-300 transition"><ChevronLeft className="w-5 h-5"/></button>
                <span className="font-bold text-white capitalize text-lg">{monthNames[currentMonth]} {currentYear}</span>
-               <button type="button" onClick={(e) => { e.stopPropagation(); advanceMonth(1); }} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-300 transition">
-                 <ChevronRight className="w-5 h-5"/>
-               </button>
+               <button type="button" onClick={(e) => { e.stopPropagation(); advanceMonth(1); }} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-300 transition"><ChevronRight className="w-5 h-5"/></button>
             </div>
             <div className="grid grid-cols-7 gap-y-4 text-center text-sm font-bold text-gray-400 mb-2">
-               {['Do','Lu','Ma','Mi','Ju','Vi','Sá'].map(d => <div key={d}>{d}</div>)}
+               {['Do','Lu','Ma','Mi','Ju','Vi','Sa'].map(d => <div key={d}>{d}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-y-1">
                {grid.map((day, ix) => {
                   if (!day) return <div key={`empty-${ix}`}></div>;
-                  
-                  const dateInfo = new Date(currentYear, currentMonth, day);
-                  dateInfo.setHours(0,0,0,0);
-                  
-                  const today = new Date(); 
-                  today.setHours(0,0,0,0);
+                  const dateInfo = new Date(currentYear, currentMonth, day); dateInfo.setHours(0,0,0,0);
+                  const today = new Date(); today.setHours(0,0,0,0);
                   const isPast = dateInfo < today;
-                  
                   const isSelected = selectedDate && dateInfo.getTime() === selectedDate.getTime();
-
-                  let btnStyle = isSelected 
-                    ? 'bg-pink-500 text-white font-bold shadow-lg shadow-pink-500/40'
-                    : isPast ? 'text-gray-600 opacity-50 cursor-not-allowed' : 'text-gray-200 hover:bg-white/10';
-
+                  let btnStyle = isSelected ? 'bg-pink-500 text-white font-bold shadow-lg shadow-pink-500/40' : isPast ? 'text-gray-600 opacity-50 cursor-not-allowed' : 'text-gray-200 hover:bg-white/10';
                   return (
                      <div key={`day-${day}`} className="w-full h-10 flex items-center justify-center">
-                       <button
-                         type="button"
-                         disabled={isPast}
-                         onClick={(e) => {
-                             e.stopPropagation();
-                             setSelectedDate(dateInfo);
-                             setIsDateOpen(false);
-                         }}
-                         className={`w-9 h-9 rounded-full flex items-center justify-center text-sm transition-all focus:outline-none ${btnStyle}`}
-                       >
-                         {day}
-                       </button>
+                       <button type="button" disabled={isPast} onClick={(e) => { e.stopPropagation(); setSelectedDate(dateInfo); setIsDateOpen(false); }}
+                         className={`w-9 h-9 rounded-full flex items-center justify-center text-sm transition-all focus:outline-none ${btnStyle}`}>{day}</button>
                      </div>
                   );
                })}
@@ -228,101 +226,53 @@ export default function EditarEventoPage() {
   return (
     <div className="min-h-screen bg-[#110e1b] text-white">
       <Navbar user={null} /> 
-      
       <main className="max-w-4xl mx-auto px-6 py-12">
         <div className="flex justify-between items-center mb-8">
-            <Link href="/organizador" className="inline-flex items-center text-pink-500 hover:text-pink-400 font-bold transition-colors">
-            <ArrowLeft className="w-5 h-5 mr-2"/> Cancelar Edición
-            </Link>
+            <Link href="/organizador" className="inline-flex items-center text-pink-500 hover:text-pink-400 font-bold transition-colors"><ArrowLeft className="w-5 h-5 mr-2"/> Cancelar Edicion</Link>
             <span className="text-gray-500 font-mono text-sm bg-black/50 px-3 py-1 rounded-full border border-white/10">{id}</span>
         </div>
 
         <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-pink-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+            <h1 className="text-3xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-500">Modificar Evento</h1>
+            <p className="text-gray-400 mb-10 w-3/4">Corrige los datos. Cualquier cambio se vera reflejado inmediatamente.</p>
 
-            <h1 className="text-3xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-500">
-               Modificar Evento
-            </h1>
-            <p className="text-gray-400 mb-10 w-3/4">Corrige los datos. Cualquier cambio se verá reflejado inmediatamente en tienda.</p>
-
-            {errorMsg && (
-                <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl mb-8 font-medium">
-                    🚨 {errorMsg}
-                </div>
-            )}
+            {errorMsg && (<div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl mb-8 font-medium">{errorMsg}</div>)}
 
             <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div className="space-y-2 md:col-span-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <Music className="w-4 h-4 text-purple-400"/> Título del Espectáculo
-                       </label>
-                       <input 
-                         type="text" name="titulo" required
-                         value={formData.titulo} onChange={handleChange}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-lg placeholder-gray-600"
-                       />
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2"><Music className="w-4 h-4 text-purple-400"/> Titulo del Evento</label>
+                       <input type="text" name="titulo" required value={formData.titulo} onChange={handleChange}
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-lg placeholder-gray-600" />
                    </div>
 
                    <div className="space-y-2 md:col-span-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <ImageIcon className="w-4 h-4 text-purple-400"/> Imagen Promocional
-                       </label>
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2"><ImageIcon className="w-4 h-4 text-purple-400"/> Imagen Promocional</label>
                        <div className="flex gap-4 items-center">
                            <div className="flex-1 flex flex-col sm:flex-row gap-3">
-                               <input 
-                                 type="url" name="imagen"
-                                 value={formData.imagen.startsWith('data:') ? '' : formData.imagen} 
-                                 onChange={handleChange}
-                                 placeholder="Pegar URL web externa..."
-                                 className="flex-1 bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-blue-400 placeholder-gray-600"
-                               />
+                               <input type="url" name="imagen" value={formData.imagen.startsWith('data:') ? '' : formData.imagen} onChange={handleChange} placeholder="Pegar URL web externa..."
+                                 className="flex-1 bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-blue-400 placeholder-gray-600" />
                                <div className="flex-shrink-0 flex items-center bg-[#1a1625] border border-white/10 rounded-xl px-4 py-3 hover:border-pink-500 transition cursor-pointer">
-                                  <input 
-                                    type="file" accept="image/*"
-                                    onChange={async (e) => {
+                                  <input type="file" accept="image/*" onChange={async (e) => {
                                       const file = e.target.files?.[0];
                                       if (file) {
-                                          if (file.size > 2 * 1024 * 1024) {
-                                             alert("La imagen debe ser menor a 2MB");
-                                             return;
-                                          }
-                                          
+                                          if (file.size > 2 * 1024 * 1024) { alert("Imagen menor a 2MB"); return; }
                                           setLoading(true);
                                           const fileExt = file.name.split('.').pop();
                                           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-                                          
-                                          const { error: uploadError } = await supabase.storage
-                                              .from('eventos')
-                                              .upload(fileName, file);
-                                              
-                                          if (uploadError) {
-                                              alert("Error al subir la imagen (Asegúrate de ejecutar el script de Storage en Supabase): " + uploadError.message);
-                                              setLoading(false);
-                                              return;
-                                          }
-                                          
-                                          const { data } = supabase.storage
-                                              .from('eventos')
-                                              .getPublicUrl(fileName);
-                                              
+                                          const { error: uploadError } = await supabase.storage.from('eventos').upload(fileName, file);
+                                          if (uploadError) { alert("Error: " + uploadError.message); setLoading(false); return; }
+                                          const { data } = supabase.storage.from('eventos').getPublicUrl(fileName);
                                           setFormData(prev => ({ ...prev, imagen: data.publicUrl }));
                                           setLoading(false);
                                       }
-                                    }}
-                                    className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-pink-500/10 file:text-pink-400 hover:file:bg-pink-500/20 transition cursor-pointer w-full"
-                                  />
+                                    }} className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-pink-500/10 file:text-pink-400 hover:file:bg-pink-500/20 transition cursor-pointer w-full" />
                                </div>
                            </div>
                            {formData.imagen && (
                                <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/20 bg-black shrink-0 relative group">
-                                   <button 
-                                      type="button" 
-                                      onClick={() => setFormData(prev => ({...prev, imagen: ''}))}
-                                      className="absolute inset-0 bg-red-500/80 text-white font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
-                                   >
-                                      X
-                                   </button>
+                                   <button type="button" onClick={() => setFormData(prev => ({...prev, imagen: ''}))} className="absolute inset-0 bg-red-500/80 text-white font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center transition">X</button>
                                    <img src={formData.imagen} alt="Preview" className="w-full h-full object-cover" />
                                </div>
                            )}
@@ -330,113 +280,96 @@ export default function EditarEventoPage() {
                    </div>
 
                    <div className="space-y-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-purple-400"/> Fecha de la Gira
-                       </label>
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2"><Calendar className="w-4 h-4 text-purple-400"/> Fecha</label>
                        <div className="relative" ref={dateRef}>
-                          <div 
-                             onClick={() => setIsDateOpen(!isDateOpen)}
-                             className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 cursor-pointer hover:border-pink-500 transition-all font-medium text-gray-300 flex items-center justify-between"
-                          >
-                             <span>
-                               {selectedDate 
-                                  ? selectedDate.toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric'}) 
-                                  : 'Selecciona un día en el calendario'}
-                             </span>
+                          <div onClick={() => setIsDateOpen(!isDateOpen)} className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 cursor-pointer hover:border-pink-500 transition-all font-medium text-gray-300 flex items-center justify-between">
+                             <span>{selectedDate ? selectedDate.toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric'}) : 'Selecciona un dia'}</span>
                              <Calendar className={`w-5 h-5 ${selectedDate ? 'text-pink-500' : 'text-gray-500'}`}/>
                           </div>
-
-                          {isDateOpen && (
-                              <div className="absolute top-[105%] left-0 w-[340px] bg-[#221e30] border border-white/20 rounded-2xl shadow-2xl p-5 z-50 animate-in fade-in slide-in-from-top-2">
-                                  {renderMonthGrid()}
-                              </div>
-                          )}
+                          {isDateOpen && (<div className="absolute top-[105%] left-0 w-[340px] bg-[#221e30] border border-white/20 rounded-2xl shadow-2xl p-5 z-50">{renderMonthGrid()}</div>)}
                        </div>
                    </div>
 
                    <div className="space-y-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-purple-400"/> Hora
-                       </label>
-                       <input 
-                         type="time" required
-                         value={timeStr} onChange={(e) => setTimeStr(e.target.value)}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-gray-300 [color-scheme:dark]"
-                       />
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2"><Clock className="w-4 h-4 text-purple-400"/> Hora</label>
+                       <input type="time" required value={timeStr} onChange={(e) => setTimeStr(e.target.value)}
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-gray-300 [color-scheme:dark]" />
                    </div>
 
                    <div className="space-y-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-purple-400"/> Ubicación o Recinto
-                       </label>
-                       <select 
-                         name="ubicacion" required
-                         value={formData.ubicacion} onChange={handleChange}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-white appearance-none cursor-pointer"
-                       >
-                         {UBICACIONES.map(loc => (
-                            <option key={loc.value} value={loc.value}>{loc.label}</option>
-                         ))}
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2"><MapPin className="w-4 h-4 text-purple-400"/> Ubicacion</label>
+                       <select name="ubicacion" required value={formData.ubicacion} onChange={handleChange}
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-white appearance-none cursor-pointer">
+                         {UBICACIONES.map(loc => (<option key={loc.value} value={loc.value}>{loc.label}</option>))}
                        </select>
                    </div>
 
                    <div className="space-y-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <Users className="w-4 h-4 text-purple-400"/> Capacidad Máxima
-                       </label>
-                       <input 
-                         type="number" name="capacidad" required min="1"
-                         value={formData.capacidad} onChange={handleChange}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium"
-                       />
-                   </div>
-
-                   <div className="space-y-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                          <DollarSign className="w-4 h-4 text-purple-400"/> Precio Base Inicial (MXN)
-                       </label>
-                       <input 
-                         type="number" name="precio_base" required min="1" step="0.01"
-                         value={formData.precio_base} onChange={handleChange}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all font-medium text-pink-400"
-                       />
-                   </div>
-
-                   <div className="space-y-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest">
-                          Categoría Musical
-                       </label>
-                       <select 
-                         name="categoria_id" required
-                         value={formData.categoria_id} onChange={handleChange}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-white appearance-none cursor-pointer"
-                       >
-                         {categorias.map(c => (
-                            <option key={c.id} value={c.id}>{c.nombre}</option>
-                         ))}
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest">Categoria Musical</label>
+                       <select name="categoria_id" required value={formData.categoria_id} onChange={handleChange}
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-white appearance-none cursor-pointer">
+                         {categorias.map(c => (<option key={c.id} value={c.id}>{c.nombre}</option>))}
                        </select>
+                   </div>
+
+                   {/* CONFIGURACION DE TIPOS DE BOLETO */}
+                   <div className="space-y-4 md:col-span-2">
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
+                          <Ticket className="w-4 h-4 text-purple-400"/> Configuracion de Boletos
+                       </label>
+                       <p className="text-xs text-gray-500 -mt-2">Define precio y stock para cada zona.</p>
+                       
+                       <div className="space-y-3">
+                         {tiposBoleto.map((tipo, index) => (
+                           <div key={tipo.nombre} className={`bg-[#1a1625] border rounded-2xl p-5 transition-all ${tipo.enabled ? 'border-white/15' : 'border-white/5 opacity-50'}`}>
+                             <div className="flex items-center justify-between mb-4">
+                               <div className="flex items-center gap-3">
+                                 <button type="button" onClick={() => { const u = [...tiposBoleto]; u[index].enabled = !u[index].enabled; setTiposBoleto(u); }}
+                                   className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${tipo.enabled ? 'bg-pink-500 border-pink-500' : 'border-gray-600 bg-transparent'}`}>
+                                   {tipo.enabled && <span className="text-white text-xs font-bold">&#10003;</span>}
+                                 </button>
+                                 <span className="font-bold text-lg">{tipo.nombre}</span>
+                               </div>
+                             </div>
+                             {tipo.enabled && (
+                               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                 <div>
+                                   <label className="block text-xs text-gray-500 mb-1 font-medium">Precio (MXN)</label>
+                                   <input type="number" min="0" step="0.01" value={tipo.precio} onChange={(e) => { const u = [...tiposBoleto]; u[index].precio = Number(e.target.value); setTiposBoleto(u); }}
+                                     className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-500 text-pink-400 font-bold" />
+                                 </div>
+                                 <div>
+                                   <label className="block text-xs text-gray-500 mb-1 font-medium">Stock (cantidad)</label>
+                                   <input type="number" min="0" value={tipo.stock_total} onChange={(e) => { const u = [...tiposBoleto]; u[index].stock_total = Number(e.target.value); setTiposBoleto(u); }}
+                                     className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium" />
+                                 </div>
+                                 <div>
+                                   <label className="block text-xs text-gray-500 mb-1 font-medium">Max por compra</label>
+                                   <input type="number" min="1" max="20" value={tipo.max_por_compra} onChange={(e) => { const u = [...tiposBoleto]; u[index].max_por_compra = Number(e.target.value); setTiposBoleto(u); }}
+                                     className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium" />
+                                 </div>
+                               </div>
+                             )}
+                           </div>
+                         ))}
+                       </div>
+                       <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex items-center justify-between">
+                         <span className="text-sm text-gray-300 flex items-center gap-2"><Users className="w-4 h-4 text-purple-400" /> Capacidad total calculada</span>
+                         <span className="font-black text-xl text-purple-400">{capacidadTotal.toLocaleString()}</span>
+                       </div>
                    </div>
 
                    <div className="space-y-2 md:col-span-2">
-                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest">
-                          Descripción (Opcional pero recomendada)
-                       </label>
-                       <textarea 
-                         name="descripcion" minLength={10} maxLength={1000}
-                         value={formData.descripcion} onChange={handleChange} rows={4}
-                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all resize-none placeholder-gray-600"
-                       />
+                       <label className="text-sm font-bold text-gray-300 uppercase tracking-widest">Descripcion (Opcional)</label>
+                       <textarea name="descripcion" minLength={10} maxLength={1000} value={formData.descripcion} onChange={handleChange} rows={4}
+                         className="w-full bg-[#1a1625] border border-white/10 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all resize-none placeholder-gray-600" />
                    </div>
-
                </div>
 
                <hr className="border-white/10 my-8"/>
-
-               <button 
-                 type="submit" disabled={loading}
-                 className="w-full md:w-auto mt-4 px-10 py-5 rounded-full font-black text-lg text-white bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 shadow-[0_0_20px_rgba(219,39,119,0.3)] hover:shadow-[0_0_30px_rgba(219,39,119,0.5)] transform hover:-translate-y-1 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
-               >
-                 {loading ? <><Loader2 className="w-6 h-6 animate-spin"/> Actualizando</> : 'Guardar Re-configuración'}
+               <button type="submit" disabled={loading}
+                 className="w-full md:w-auto mt-4 px-10 py-5 rounded-full font-black text-lg text-white bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 shadow-[0_0_20px_rgba(219,39,119,0.3)] hover:shadow-[0_0_30px_rgba(219,39,119,0.5)] transform hover:-translate-y-1 transition-all disabled:opacity-50 flex items-center justify-center gap-3">
+                 {loading ? <><Loader2 className="w-6 h-6 animate-spin"/> Actualizando</> : 'Guardar Re-configuracion'}
                </button>
             </form>
         </div>

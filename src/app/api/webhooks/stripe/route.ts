@@ -164,6 +164,8 @@ export async function POST(request: NextRequest) {
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object
         const ordenId = paymentIntent.metadata?.orden_id
+        const tipoBoletoId = paymentIntent.metadata?.tipo_boleto_id
+        const cantidad = parseInt(paymentIntent.metadata?.cantidad || '0', 10)
 
         if (!ordenId) break
 
@@ -183,8 +185,25 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('boleto')
           .update({ estado: 'disponible' })
-          .eq('evento_id', paymentIntent.metadata?.evento_id)
+          .eq('orden_id', ordenId)
           .eq('estado', 'reservado')
+
+        // Restaurar stock del tipo de boleto
+        if (tipoBoletoId && cantidad > 0) {
+          const { data: tipoBoleto } = await supabase
+            .from('tipo_boleto')
+            .select('stock_disponible')
+            .eq('id', tipoBoletoId)
+            .single();
+
+          if (tipoBoleto) {
+            await supabase
+              .from('tipo_boleto')
+              .update({ stock_disponible: tipoBoleto.stock_disponible + cantidad })
+              .eq('id', tipoBoletoId);
+            console.log(`↩ Stock restaurado: +${cantidad} para tipo_boleto ${tipoBoletoId}`);
+          }
+        }
 
         console.log(`✗ Pago fallido para orden ${ordenId}`)
         break
@@ -194,6 +213,8 @@ export async function POST(request: NextRequest) {
       case 'charge.refunded': {
         const charge = event.data.object
         const ordenId = charge.metadata?.orden_id
+        const tipoBoletoId = charge.metadata?.tipo_boleto_id
+        const cantidad = parseInt(charge.metadata?.cantidad || '0', 10)
 
         if (!ordenId) break
 
@@ -202,16 +223,36 @@ export async function POST(request: NextRequest) {
           .update({ estado: 'fallido' })
           .eq('orden_id', ordenId)
 
-        await supabase
+        // Obtener boletos de la orden para restaurarlos
+        const { data: boletosOrden } = await supabase
           .from('boleto')
-          .update({ estado: 'disponible' })
-          .in('id',
-            (await supabase
-              .from('boleto')
-              .select('id')
-              .eq('estado', 'vendido')
-            ).data?.map(b => b.id) || []
-          )
+          .select('id')
+          .eq('orden_id', ordenId)
+          .eq('estado', 'vendido');
+
+        if (boletosOrden && boletosOrden.length > 0) {
+          await supabase
+            .from('boleto')
+            .update({ estado: 'disponible' })
+            .in('id', boletosOrden.map(b => b.id));
+        }
+
+        // Restaurar stock del tipo de boleto en reembolso
+        if (tipoBoletoId && cantidad > 0) {
+          const { data: tipoBoleto } = await supabase
+            .from('tipo_boleto')
+            .select('stock_disponible')
+            .eq('id', tipoBoletoId)
+            .single();
+
+          if (tipoBoleto) {
+            await supabase
+              .from('tipo_boleto')
+              .update({ stock_disponible: tipoBoleto.stock_disponible + cantidad })
+              .eq('id', tipoBoletoId);
+            console.log(`↩ Stock restaurado por reembolso: +${cantidad} para tipo_boleto ${tipoBoletoId}`);
+          }
+        }
 
         console.log(`↩ Reembolso procesado para orden ${ordenId}`)
         break

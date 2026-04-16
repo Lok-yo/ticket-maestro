@@ -22,6 +22,7 @@ function CheckoutFormContent() {
   const price = parseFloat(searchParams.get('price') || '800');
   const qty = parseInt(searchParams.get('qty') || '1', 10);
   const eventTitle = searchParams.get('eventTitle') || 'Festival Gira 2026';
+  const tipoBoletoId = searchParams.get('tipoBoletoId') || '';
   
   const subtotal = price * qty;
   const cargoServicio = subtotal * 0.10; // 10% de simulacion de cargo
@@ -102,7 +103,8 @@ function CheckoutFormContent() {
                 name: formData.name,
                 email: formData.email,
                 phone: formData.phone,
-                price // <-- Añadido
+                price, // <- Añadido
+                tipoBoletoId, // <- ID del tipo de boleto para validar stock
             })
         });
 

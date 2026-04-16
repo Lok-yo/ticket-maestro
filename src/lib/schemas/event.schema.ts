@@ -1,5 +1,14 @@
 import { z } from 'zod'
 
+// Schema para cada tipo de boleto individual
+export const tipoBoletoSchema = z.object({
+  nombre: z.string().min(1, 'El nombre del tipo es requerido'),
+  precio: z.number().min(0, 'El precio no puede ser negativo').max(1000000, 'El precio es demasiado alto'),
+  stock_total: z.number().int().min(0, 'El stock no puede ser negativo').max(100000, 'Stock demasiado alto'),
+  descripcion: z.string().max(200, 'Descripción demasiado larga').optional().or(z.literal('')),
+  max_por_compra: z.number().int().min(1).max(20).optional().default(10),
+})
+
 export const createEventSchema = z.object({
   titulo: z
     .string()
@@ -29,12 +38,15 @@ export const createEventSchema = z.object({
   precio_base: z
     .number()
     .min(0, 'El precio no puede ser negativo')
-    .max(1000000, 'El precio es demasiado alto'),
+    .max(1000000, 'El precio es demasiado alto')
+    .optional(),
   imagen: z
     .string()
     .url('Debe ser una URL válida')
     .optional()
     .or(z.literal('')),
+  // Nuevos: tipos de boleto con precio y stock individual
+  tipos_boleto: z.array(tipoBoletoSchema).min(1, 'Debes configurar al menos un tipo de boleto').optional(),
 })
 
 export const updateEventSchema = createEventSchema.partial().extend({
@@ -43,3 +55,4 @@ export const updateEventSchema = createEventSchema.partial().extend({
 
 export type CreateEventInput = z.infer<typeof createEventSchema>
 export type UpdateEventInput = z.infer<typeof updateEventSchema>
+export type TipoBoletoInput = z.infer<typeof tipoBoletoSchema>

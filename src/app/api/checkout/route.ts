@@ -18,13 +18,13 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { eventId, type, qty, name, email, phone, price } = body;
+    const { eventId, type, qty, name, email, phone, price, tipoBoletoId } = body;
 
     if (!eventId || !qty || qty <= 0 || !price) {
       return NextResponse.json({ error: 'Faltan datos requeridos (evento, cantidad, precio).' }, { status: 400 });
     }
 
-    // 1. Obtener Evento de DB para validar precios y cupo
+    // 1. Obtener Evento de DB para validar
     const { data: evento, error: eventError } = await supabase
       .from('evento')
       .select('*')
@@ -35,23 +35,64 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Evento no encontrado.' }, { status: 404 });
     }
 
-    // 1.5 Validar Capacidad Disponible
-    const { count: boletosVendidos, error: countError } = await supabase
-      .from('boleto')
-      .select('*', { count: 'exact', head: true })
-      .eq('evento_id', eventId)
-      .in('estado', ['reservado', 'vendido']);
+    // 2. Validar stock del tipo de boleto seleccionado
+    if (tipoBoletoId) {
+      // Nuevo flujo: validar contra tipo_boleto
+      const { data: tipoBoleto, error: tipoError } = await supabase
+        .from('tipo_boleto')
+        .select('*')
+        .eq('id', tipoBoletoId)
+        .eq('evento_id', eventId)
+        .single();
 
-    if (countError) {
-      return NextResponse.json({ error: 'Error al verificar la disponibilidad de boletos.' }, { status: 500 });
-    }
+      if (tipoError || !tipoBoleto) {
+        return NextResponse.json({ error: 'Tipo de boleto no encontrado para este evento.' }, { status: 404 });
+      }
 
-    const ocupados = boletosVendidos || 0;
-    if (ocupados + qty > evento.capacidad) {
-      const disponibles = evento.capacidad - ocupados;
-      return NextResponse.json({ 
-        error: `Capacidad agotada. Solo quedan ${disponibles > 0 ? disponibles : 0} boletos disponibles.` 
-      }, { status: 400 });
+      if (tipoBoleto.stock_disponible < qty) {
+        return NextResponse.json({ 
+          error: `Stock insuficiente para ${tipoBoleto.nombre}. Solo quedan ${tipoBoleto.stock_disponible} boletos disponibles.` 
+        }, { status: 400 });
+      }
+
+      // Validar que el precio coincida con el configurado (seguridad anti-manipulación)
+      const precioReal = parseFloat(tipoBoleto.precio);
+      const precioEnviado = parseFloat(price);
+      if (Math.abs(precioReal - precioEnviado) > 0.01) {
+        return NextResponse.json({ 
+          error: 'El precio no coincide con la configuración actual. Recarga la página e intenta de nuevo.' 
+        }, { status: 400 });
+      }
+
+      // Decrementar stock del tipo de boleto
+      const { error: stockError } = await supabase
+        .from('tipo_boleto')
+        .update({ stock_disponible: tipoBoleto.stock_disponible - qty })
+        .eq('id', tipoBoletoId)
+        .eq('stock_disponible', tipoBoleto.stock_disponible); // Optimistic locking
+
+      if (stockError) {
+        return NextResponse.json({ error: 'Error al reservar boletos. Intenta de nuevo.' }, { status: 500 });
+      }
+    } else {
+      // Flujo legacy: validar contra capacidad global (para eventos sin tipo_boleto)
+      const { count: boletosVendidos, error: countError } = await supabase
+        .from('boleto')
+        .select('*', { count: 'exact', head: true })
+        .eq('evento_id', eventId)
+        .in('estado', ['reservado', 'vendido']);
+
+      if (countError) {
+        return NextResponse.json({ error: 'Error al verificar la disponibilidad de boletos.' }, { status: 500 });
+      }
+
+      const ocupados = boletosVendidos || 0;
+      if (ocupados + qty > evento.capacidad) {
+        const disponibles = evento.capacidad - ocupados;
+        return NextResponse.json({ 
+          error: `Capacidad agotada. Solo quedan ${disponibles > 0 ? disponibles : 0} boletos disponibles.` 
+        }, { status: 400 });
+      }
     }
 
     // Usamos el precio real del boleto (determinado dinámicamente)
@@ -82,6 +123,14 @@ export async function POST(req: NextRequest) {
 
     if (ordenError || !orden) {
       console.error('Error insertando orden:', ordenError);
+      // Si falla la orden, restaurar stock
+      if (tipoBoletoId) {
+        // Restaurar stock directamente
+        const { data: tipoData } = await supabase.from('tipo_boleto').select('stock_disponible').eq('id', tipoBoletoId).single();
+        if (tipoData) {
+          await supabase.from('tipo_boleto').update({ stock_disponible: tipoData.stock_disponible + qty }).eq('id', tipoBoletoId);
+        }
+      }
       return NextResponse.json({ error: 'No se pudo generar la orden temporal.' }, { status: 500 });
     }
 
@@ -144,7 +193,10 @@ export async function POST(req: NextRequest) {
       metadata: {
         orden_id: orden.id,
         evento_id: eventId,
-        user_id: user.id
+        user_id: user.id,
+        tipo_boleto_id: tipoBoletoId || '',
+        tipo_boleto_nombre: type,
+        cantidad: qty.toString(),
       },
     });
 

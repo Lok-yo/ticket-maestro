@@ -3,15 +3,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Calendar, MapPin, Users, Info, ChevronLeft } from 'lucide-react';
+import { Calendar, MapPin, Users, Info, ChevronLeft, AlertTriangle } from 'lucide-react';
 import Navbar from '@/Components/layout/Navbar';
 import { createClient } from '@/lib/supabase/client';
+import type { TipoBoleto } from '@/types';
 
-// Función para generar tipos de boletos en base al precio real del evento
-const getTicketTypes = (basePrice: number) => [
-  { id: 'general', name: 'General', price: basePrice, maxQty: 10, description: 'Acceso a zona general.' },
-  { id: 'preferente', name: 'Preferente', price: Math.round(basePrice * 1.5), maxQty: 5, description: 'Mejor vista y acceso preferencial.' },
-  { id: 'vip', name: 'VIP', price: Math.round(basePrice * 2.5), maxQty: 2, description: 'Acceso exclusivo y amenidades VIP.' },
+// Fallback: Función para generar tipos de boletos cuando no hay tipo_boleto en BD
+const getTicketTypesFallback = (basePrice: number, capacidad: number) => [
+  { id: 'general-fallback', nombre: 'General', precio: basePrice, stock_disponible: capacidad, max_por_compra: 10, descripcion: 'Acceso a zona general.' },
+  { id: 'preferente-fallback', nombre: 'Preferente', precio: Math.round(basePrice * 1.5), stock_disponible: Math.floor(capacidad * 0.3), max_por_compra: 5, descripcion: 'Mejor vista y acceso preferencial.' },
+  { id: 'vip-fallback', nombre: 'VIP', precio: Math.round(basePrice * 2.5), stock_disponible: Math.floor(capacidad * 0.1), max_por_compra: 2, descripcion: 'Acceso exclusivo y amenidades VIP.' },
 ];
 
 export default function EventDetailPage() {
@@ -19,39 +20,46 @@ export default function EventDetailPage() {
   const params = useParams();
   const eventId = params.id as string;
   
-  // Variables simuladas (en producción esto vendría de Supabase usando el eventId)
   const [eventData, setEventData] = useState<any>(null);
   const [ticketTypes, setTicketTypes] = useState<any[]>([]);
   const [selectedType, setSelectedType] = useState<any>(null);
   
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [soldOut, setSoldOut] = useState(false);
-  const [disponibles, setDisponibles] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchEvent = async () => {
       const supabase = createClient();
       try {
-          const { data, error } = await supabase.from('evento').select('*').eq('id', eventId).single();
+          // Fetch evento con sus tipos de boleto
+          const { data, error } = await supabase
+            .from('evento')
+            .select('*, tipo_boleto(*)')
+            .eq('id', eventId)
+            .single();
+          
           if (data && !error) {
               setEventData(data);
-              const tTypes = getTicketTypes(data.precio_base || 800);
-              setTicketTypes(tTypes);
-              setSelectedType(tTypes[0]);
-
-              // Verificar disponibilidad
-              const { count } = await supabase
-                .from('boleto')
-                .select('*', { count: 'exact', head: true })
-                .eq('evento_id', eventId)
-                .in('estado', ['vendido', 'reservado']);
               
-              const ocupados = count || 0;
-              const restantes = data.capacidad - ocupados;
-              setDisponibles(restantes);
-              if (restantes <= 0) {
-                setSoldOut(true);
+              // Usar tipos de boleto reales de la BD si existen
+              if (data.tipo_boleto && data.tipo_boleto.length > 0) {
+                const tipos = data.tipo_boleto.map((t: TipoBoleto) => ({
+                  id: t.id,
+                  nombre: t.nombre,
+                  precio: Number(t.precio),
+                  stock_disponible: t.stock_disponible,
+                  stock_total: t.stock_total,
+                  max_por_compra: t.max_por_compra || 10,
+                  descripcion: t.descripcion || '',
+                  isFallback: false,
+                }));
+                setTicketTypes(tipos);
+                setSelectedType(tipos[0]);
+              } else {
+                // Fallback para eventos creados antes del nuevo sistema
+                const fallback = getTicketTypesFallback(data.precio_base || 800, data.capacidad || 1000);
+                setTicketTypes(fallback);
+                setSelectedType(fallback[0]);
               }
           } else {
              router.push('/');
@@ -66,12 +74,13 @@ export default function EventDetailPage() {
   }, [eventId, router]);
 
   const handleBuy = () => {
-    if (soldOut) return;
+    if (!selectedType || selectedType.stock_disponible <= 0) return;
     const searchParams = new URLSearchParams({
-      type: selectedType.name,
-      price: selectedType.price.toString(),
+      type: selectedType.nombre,
+      price: selectedType.precio.toString(),
       qty: quantity.toString(),
-      eventTitle: eventData?.titulo
+      eventTitle: eventData?.titulo,
+      tipoBoletoId: selectedType.isFallback === false ? selectedType.id : '',
     });
     router.push(`/checkout/${eventId}?${searchParams.toString()}`);
   };
@@ -85,6 +94,10 @@ export default function EventDetailPage() {
   }
 
   if (!eventData) return null;
+
+  const totalDisponible = ticketTypes.reduce((acc, t) => acc + (t.stock_disponible || 0), 0);
+  const allSoldOut = totalDisponible <= 0;
+  const selectedSoldOut = selectedType ? selectedType.stock_disponible <= 0 : true;
 
   return (
     <div className="min-h-screen bg-[#1a1625] text-white">
@@ -153,9 +166,39 @@ export default function EventDetailPage() {
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                 <Users className="w-5 h-5 text-pink-500"/> Capacidad Recinto
+                 <Users className="w-5 h-5 text-pink-500"/> Disponibilidad por Zona
              </h3>
-             <p className="text-gray-400">Cupo total estimado: {eventData.capacidad.toLocaleString()} personas.</p>
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+               {ticketTypes.map((type) => {
+                 const porcentaje = type.stock_total 
+                   ? Math.round(((type.stock_total - type.stock_disponible) / type.stock_total) * 100)
+                   : 0;
+                 const agotado = type.stock_disponible <= 0;
+                 
+                 return (
+                   <div key={type.id} className={`bg-white/5 rounded-2xl p-4 border ${agotado ? 'border-red-500/30' : 'border-white/10'}`}>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="font-bold text-sm">{type.nombre}</span>
+                       {agotado ? (
+                         <span className="text-xs text-red-400 font-bold">AGOTADO</span>
+                       ) : (
+                         <span className="text-xs text-green-400 font-bold">{type.stock_disponible} disponibles</span>
+                       )}
+                     </div>
+                     {/* Barra de progreso */}
+                     <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                       <div 
+                         className={`h-full rounded-full transition-all ${
+                           porcentaje >= 90 ? 'bg-red-500' : porcentaje >= 60 ? 'bg-yellow-500' : 'bg-green-500'
+                         }`}
+                         style={{ width: `${porcentaje}%` }}
+                       />
+                     </div>
+                     <p className="text-xs text-gray-500 mt-1">{porcentaje}% vendido</p>
+                   </div>
+                 );
+               })}
+             </div>
           </div>
 
         </div>
@@ -167,80 +210,113 @@ export default function EventDetailPage() {
             
             {/* Ticket Types */}
             <div className="space-y-4 mb-8">
-              {ticketTypes.map((type) => (
-                <button
-                  key={type.id}
-                  onClick={() => {
-                    setSelectedType(type);
-                    setQuantity(1); // Reset qty when changing type
-                  }}
-                  className={`w-full text-left p-4 rounded-xl border transition-all ${
-                    selectedType.id === type.id 
-                      ? 'border-pink-500 bg-pink-500/10' 
-                      : 'border-white/10 hover:border-white/30 bg-white/5'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-lg">{type.name}</span>
-                    <span className="font-bold text-pink-400">${type.price} MXN</span>
-                  </div>
-                  <p className="text-xs text-gray-400 leading-tight">{type.description}</p>
-                </button>
-              ))}
+              {ticketTypes.map((type) => {
+                const agotado = type.stock_disponible <= 0;
+                return (
+                  <button
+                    key={type.id}
+                    onClick={() => {
+                      if (!agotado) {
+                        setSelectedType(type);
+                        setQuantity(1);
+                      }
+                    }}
+                    disabled={agotado}
+                    className={`w-full text-left p-4 rounded-xl border transition-all ${
+                      agotado 
+                        ? 'border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed'
+                        : selectedType?.id === type.id 
+                          ? 'border-pink-500 bg-pink-500/10' 
+                          : 'border-white/10 hover:border-white/30 bg-white/5'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-lg">{type.nombre}</span>
+                        {agotado && (
+                          <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold">AGOTADO</span>
+                        )}
+                      </div>
+                      <span className="font-bold text-pink-400">${Number(type.precio).toLocaleString()} MXN</span>
+                    </div>
+                    <p className="text-xs text-gray-400 leading-tight">{type.descripcion}</p>
+                    {!agotado && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {type.stock_disponible} disponibles
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Quantity */}
-            <div className="mb-8">
-              <label className="block text-sm font-medium text-gray-300 mb-2">Cantidad</label>
-              <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-xl p-2 w-max">
-                <button 
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/5 hover:bg-white/10 transition"
-                  disabled={quantity <= 1}
-                >-</button>
-                <span className="w-8 text-center font-bold text-lg">{quantity}</span>
-                <button 
-                  onClick={() => setQuantity(Math.min(selectedType.maxQty, quantity + 1))}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/5 hover:bg-white/10 transition"
-                  disabled={quantity >= selectedType.maxQty}
-                >+</button>
+            {selectedType && !selectedSoldOut && (
+              <div className="mb-8">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Cantidad</label>
+                <div className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-xl p-2 w-max">
+                  <button 
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/5 hover:bg-white/10 transition"
+                    disabled={quantity <= 1}
+                  >-</button>
+                  <span className="w-8 text-center font-bold text-lg">{quantity}</span>
+                  <button 
+                    onClick={() => setQuantity(Math.min(
+                      Math.min(selectedType.max_por_compra, selectedType.stock_disponible), 
+                      quantity + 1
+                    ))}
+                    className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/5 hover:bg-white/10 transition"
+                    disabled={quantity >= Math.min(selectedType.max_por_compra, selectedType.stock_disponible)}
+                  >+</button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Máximo {Math.min(selectedType.max_por_compra, selectedType.stock_disponible)} boletos por compra.
+                </p>
               </div>
-              <p className="text-xs text-gray-400 mt-2">Máximo {selectedType.maxQty} boletos por compra.</p>
-            </div>
+            )}
 
             {/* Total */}
-            <div className="border-t border-white/10 pt-6 mb-6">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-300">Subtotal</span>
-                <span className="text-xl font-bold">${(selectedType.price * quantity).toLocaleString()} MXN</span>
+            {selectedType && !selectedSoldOut && (
+              <div className="border-t border-white/10 pt-6 mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-300">Subtotal</span>
+                  <span className="text-xl font-bold">${(selectedType.precio * quantity).toLocaleString()} MXN</span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Sold Out Banner */}
-            {soldOut && (
+            {allSoldOut && (
               <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-4 mb-6 text-center">
-                <p className="text-red-400 font-bold text-lg">🚫 Evento Agotado</p>
+                <p className="text-red-400 font-bold text-lg flex items-center justify-center gap-2">
+                  <AlertTriangle className="w-5 h-5" /> Evento Agotado
+                </p>
                 <p className="text-red-400/70 text-sm mt-1">Todos los boletos han sido vendidos.</p>
               </div>
             )}
 
-            {disponibles !== null && !soldOut && (
-              <p className="text-xs text-gray-400 mb-4 text-center">
-                Quedan <span className="text-pink-400 font-bold">{disponibles}</span> boletos disponibles
-              </p>
+            {/* Low stock warning */}
+            {selectedType && !selectedSoldOut && selectedType.stock_disponible <= 10 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-4 text-center">
+                <p className="text-yellow-400 text-sm font-medium flex items-center justify-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4" />
+                  Últimos {selectedType.stock_disponible} boletos de {selectedType.nombre}
+                </p>
+              </div>
             )}
 
             {/* CTA */}
             <button 
               onClick={handleBuy}
-              disabled={soldOut}
+              disabled={allSoldOut || selectedSoldOut}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-                soldOut 
+                allSoldOut || selectedSoldOut
                   ? 'bg-gray-600 cursor-not-allowed opacity-50' 
                   : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 shadow-[0_0_20px_rgba(219,39,119,0.4)]'
               }`}
             >
-              {soldOut ? 'Agotado' : 'Comprar Boletos'}
+              {allSoldOut || selectedSoldOut ? 'Agotado' : 'Comprar Boletos'}
             </button>
           </div>
         </div>

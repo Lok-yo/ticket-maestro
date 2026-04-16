@@ -21,6 +21,18 @@ export interface Categoria {
   descripcion: string
 }
 
+export interface TipoBoleto {
+  id: string
+  evento_id: string
+  nombre: string        // 'General', 'Preferente', 'VIP'
+  precio: number
+  stock_total: number
+  stock_disponible: number
+  descripcion?: string
+  max_por_compra: number
+  created_at?: string
+}
+
 export interface Evento {
   id: string
   titulo: string
@@ -34,6 +46,7 @@ export interface Evento {
   organizador_id?: string
   precio_base?: number
   imagen?: string
+  tipo_boleto?: TipoBoleto[]  // Relación con tipos de boleto
 }
 
 export interface Boleto {

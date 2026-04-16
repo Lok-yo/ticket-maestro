@@ -7,7 +7,7 @@ import type { Usuario, Evento } from '@/types';
 import DeleteEventButton from '@/Components/ui/DeleteEventButton';
 import ClabeForm from '@/Components/ui/ClabeForm';
 
-// Desactivar caché para ver los eventos creados al vuelo
+// Desactivar cache para ver los eventos creados al vuelo
 export const dynamic = 'force-dynamic';
 
 export default async function OrganizadorPage() {
@@ -31,19 +31,17 @@ export default async function OrganizadorPage() {
     redirect('/'); // Expulsar clientes
   }
 
-  // Obtener eventos del creador actual
+  // Obtener eventos del creador actual con tipos de boleto
   const { data: eventos, error } = await supabase
     .from('evento')
-    .select('*, categoria(nombre)')
+    .select('*, categoria(nombre), tipo_boleto(*)')
     .eq('organizador_id', user.id)
     .order('fecha', { ascending: false });
 
   const eventsData = eventos || [];
   
-  // Analíticas Reales y Balance
+  // Analiticas Reales y Balance
   const totalEventos = eventsData.length;
-  let preventaTickets = 0;
-  eventsData.forEach(ev => { '...' /* logic if we had sold tickets */ }); // Demo fallback if needed
 
   const { data: balanceData } = await supabase
     .from('balance_organizador')
@@ -76,7 +74,7 @@ export default async function OrganizadorPage() {
            </div>
         </div>
 
-        {/* Cajas de Métricas Premium */}
+        {/* Cajas de Metricas Premium */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl relative overflow-hidden group flex flex-col justify-between">
                 <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 group-hover:rotate-12 transition-transform">
@@ -102,12 +100,19 @@ export default async function OrganizadorPage() {
           <div className="bg-white/5 border border-dashed border-white/20 rounded-3xl p-16 text-center">
             <CalendarDays className="w-16 h-16 text-gray-500 mx-auto mb-4 opacity-20"/>
             <h2 className="text-xl font-bold mb-2 text-white/80">Lienzo en blanco</h2>
-            <p className="text-gray-400 mb-6 max-w-md mx-auto">Tu catálogo está vacío. La magia empieza cuando publicas tu primera gira o espectáculo interactivo.</p>
+            <p className="text-gray-400 mb-6 max-w-md mx-auto">Tu catalogo esta vacio. La magia empieza cuando publicas tu primera gira.</p>
             <Link href="/organizador/nuevo" className="inline-block bg-white/10 hover:bg-white/20 text-white font-medium py-2 px-6 rounded-full transition">Comenzar a Crear</Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {eventsData.map((evento) => (
+            {eventsData.map((evento) => {
+              // Calcular precio "desde" usando tipos de boleto
+              const tienetipos = evento.tipo_boleto && evento.tipo_boleto.length > 0;
+              const precioDesde = tienetipos
+                ? Math.min(...evento.tipo_boleto.map((t: any) => Number(t.precio)))
+                : evento.precio_base;
+
+              return (
               <Link key={evento.id} href={`/organizador/editar/${evento.id}`} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:bg-white/10 transition-colors cursor-pointer group relative block">
                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-pink-500/10 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none"></div>
                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 text-white font-bold py-2 px-6 rounded-full opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100 z-30 shadow-2xl backdrop-blur-sm border border-white/20">
@@ -126,21 +131,24 @@ export default async function OrganizadorPage() {
                  </div>
                  <div className="p-6 relative z-10">
                     <p className="text-xs text-pink-400 font-bold mb-1 uppercase tracking-wider">
-                        {evento.categoria?.nombre || 'Categoría Premium'}
+                        {evento.categoria?.nombre || 'Categoria Premium'}
                     </p>
                     <h3 className="text-xl font-extrabold mb-3 truncate group-hover:text-pink-300 transition-colors">{evento.titulo}</h3>
                     <div className="space-y-1 text-sm text-gray-400 mb-4">
-                        <p>📍 {evento.ubicacion}</p>
-                        <p>📅 {new Date(evento.fecha).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        <p>{evento.ubicacion}</p>
+                        <p>{new Date(evento.fecha).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                     </div>
                     
                     <div className="flex items-center justify-between border-t border-white/10 pt-4 mt-2">
                         <span className="text-xs text-gray-500 font-mono">{evento.id}</span>
-                        <span className="font-bold text-white">${evento.precio_base} MXN</span>
+                        <span className="font-bold text-white">
+                          {tienetipos ? `Desde $${precioDesde?.toLocaleString()}` : `$${evento.precio_base}`} MXN
+                        </span>
                     </div>
                  </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

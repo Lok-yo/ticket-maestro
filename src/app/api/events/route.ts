@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('evento')
-      .select('*, categoria(*)', { count: 'exact' })
+      .select('*, categoria(*), tipo_boleto(*)', { count: 'exact' })
       .eq('estado', 'activo')
       .order('fecha', { ascending: true })
       .range(from, to)
@@ -83,9 +83,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { titulo, descripcion, ubicacion, fecha, capacidad, categoria_id, precio_base, imagen } = validation.data
+    const { titulo, descripcion, ubicacion, fecha, capacidad, categoria_id, precio_base, imagen, tipos_boleto } = validation.data
 
     const evtId = `EVT-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    // Calcular precio_base a partir del tipo más barato (para compatibilidad con el home/cards)
+    const precioBaseCalculado = tipos_boleto && tipos_boleto.length > 0
+      ? Math.min(...tipos_boleto.map(t => t.precio))
+      : (precio_base || 800);
 
     const { data, error } = await supabase
       .from('evento')
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest) {
         fecha,
         capacidad,
         categoria_id,
-        precio_base,
+        precio_base: precioBaseCalculado,
         imagen: imagen ? imagen : null,
         organizador_id: user.id, // Amarrado fuertemente al autor
         estado: 'activo', // Publicado directo para la demo, pero antes era 'draft'
@@ -106,6 +111,28 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) throw error
+
+    // Insertar tipos de boleto si se proporcionaron
+    if (tipos_boleto && tipos_boleto.length > 0) {
+      const tiposToInsert = tipos_boleto.map(tipo => ({
+        evento_id: evtId,
+        nombre: tipo.nombre,
+        precio: tipo.precio,
+        stock_total: tipo.stock_total,
+        stock_disponible: tipo.stock_total, // Inicialmente stock_disponible = stock_total
+        descripcion: tipo.descripcion || null,
+        max_por_compra: tipo.max_por_compra || 10,
+      }));
+
+      const { error: tiposError } = await supabase
+        .from('tipo_boleto')
+        .insert(tiposToInsert);
+
+      if (tiposError) {
+        console.error('Error insertando tipos de boleto:', tiposError);
+        // No fallamos el evento completo, solo advertimos
+      }
+    }
 
     return NextResponse.json<ApiResponse<Evento>>(
       { data, message: 'Evento creado exitosamente' },
