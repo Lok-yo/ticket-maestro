@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CalendarDays, Users, BarChart3, Plus, TrendingUp, Presentation } from 'lucide-react';
 import type { Usuario, Evento } from '@/types';
 import DeleteEventButton from '@/Components/ui/DeleteEventButton';
+import ClabeForm from '@/Components/ui/ClabeForm';
 
 // Desactivar caché para ver los eventos creados al vuelo
 export const dynamic = 'force-dynamic';
@@ -39,9 +40,19 @@ export default async function OrganizadorPage() {
 
   const eventsData = eventos || [];
   
-  // Analíticas Mock (Podrían extraerse de ordenes después)
+  // Analíticas Reales y Balance
   const totalEventos = eventsData.length;
-  const preventaTickets = eventsData.length * 43; // Demo
+  let preventaTickets = 0;
+  eventsData.forEach(ev => { '...' /* logic if we had sold tickets */ }); // Demo fallback if needed
+
+  const { data: balanceData } = await supabase
+    .from('balance_organizador')
+    .select('*')
+    .eq('organizador_id', user.id)
+    .single();
+
+  const saldoDisponible = balanceData?.saldo_disponible || 0;
+  const miClabe = balanceData?.clabe || '';
 
   return (
     <div className="min-h-screen bg-[#110e1b] text-white">
@@ -67,30 +78,18 @@ export default async function OrganizadorPage() {
 
         {/* Cajas de Métricas Premium */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl relative overflow-hidden group">
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl relative overflow-hidden group flex flex-col justify-between">
                 <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 group-hover:rotate-12 transition-transform">
-                    <CalendarDays className="w-24 h-24" />
+                    <TrendingUp className="w-24 h-24 text-green-500" />
                 </div>
-                <p className="text-gray-400 font-medium mb-1">Eventos Publicados</p>
-                <h3 className="text-4xl font-black text-white">{totalEventos}</h3>
+                <div>
+                   <p className="text-gray-400 font-medium mb-1">Saldo Disponible</p>
+                   <h3 className="text-4xl font-black text-green-400">${Number(saldoDisponible).toLocaleString('es-MX')} <span className="text-xl">MXN</span></h3>
+                </div>
             </div>
             
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 group-hover:rotate-12 transition-transform">
-                    <Users className="w-24 h-24" />
-                </div>
-                <p className="text-gray-400 font-medium mb-1">Boletos Previstos</p>
-                <h3 className="text-4xl font-black text-blue-400">{preventaTickets}</h3>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 group-hover:rotate-12 transition-transform">
-                    <TrendingUp className="w-24 h-24 text-pink-500" />
-                </div>
-                <p className="text-gray-400 font-medium mb-1">Estado de la Gira</p>
-                <h3 className="text-xl font-bold text-green-400 mt-2 flex items-center gap-2">
-                   <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div> Activo
-                </h3>
+            <div className="md:col-span-2">
+                <ClabeForm initialClabe={miClabe} />
             </div>
         </div>
 

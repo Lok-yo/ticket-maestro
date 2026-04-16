@@ -65,18 +65,26 @@ export async function POST(request: NextRequest) {
           .eq('id', ordenId)
 
         // Obtener boletos de la orden para generar QR y saber el organizador
-        const { data: orden } = await supabase
+        const { data: orden, error: ordenErr } = await supabase
           .from('orden')
-          .select('*, boleto:boleto(*, evento:evento(*))')
+          .select('*, boleto(*, evento(*))')
           .eq('id', ordenId)
           .single()
 
-        if (!orden?.boleto || orden.boleto.length === 0) break
+        if (ordenErr) console.error('Error al obtener orden anidada:', ordenErr)
+        if (!orden?.boleto || orden.boleto.length === 0) {
+            console.error('Orden no tiene boletos. Saliendo de webhook balance.')
+            break
+        }
 
-        const organizadorId = orden.boleto[0].evento.organizador_id;
+        // Acceder a las relaciones de Supabase considerando que pueden venir como objetos o arrays
+        const primerBoleto = orden.boleto[0];
+        const eventoDelBoleto = Array.isArray(primerBoleto.evento) ? primerBoleto.evento[0] : primerBoleto.evento;
+        const organizadorId = eventoDelBoleto?.organizador_id;
         
+        console.log("-> Organizador ID extraído:", organizadorId);
+
         // Calcular monto retenido total en base a los boletos 
-        // (ya que no hicimos un select a la tabla pago, lo recalculamos o hacemos un select rápido)
         const { data: pagoRegistrado } = await supabase
           .from('pago')
           .select('monto_retenido')
@@ -84,6 +92,7 @@ export async function POST(request: NextRequest) {
           .single();
           
         const montoRetenido = pagoRegistrado?.monto_retenido || 0;
+        console.log("-> Monto Retenido: ", montoRetenido);
 
         // Sumar al Organizador
         if (organizadorId && montoRetenido > 0) {
@@ -94,17 +103,21 @@ export async function POST(request: NextRequest) {
                .single();
 
             if (balanceActual) {
-               await supabase.from('balance_organizador').update({
+               const { error: updErr } = await supabase.from('balance_organizador').update({
                   saldo_disponible: Number(balanceActual.saldo_disponible) + Number(montoRetenido),
                   total_ganado: Number(balanceActual.total_ganado) + Number(montoRetenido),
                   ultima_actualizacion: new Date().toISOString()
                }).eq('organizador_id', organizadorId);
+               if (updErr) console.error("Error al actualizar balance:", updErr);
+               else console.log("Balance ACTUALIZADO exitosamente.")
             } else {
-               await supabase.from('balance_organizador').insert({
+               const { error: insErr } = await supabase.from('balance_organizador').insert({
                   organizador_id: organizadorId,
                   saldo_disponible: Number(montoRetenido),
                   total_ganado: Number(montoRetenido)
                });
+               if (insErr) console.error("Error al insertar balance:", insErr);
+               else console.log("Balance INSERTADO exitosamente.")
             }
         }
 
