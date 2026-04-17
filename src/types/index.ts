@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'cliente' | 'organizador'
 export type EventStatus = 'activo' | 'cancelado' | 'finalizado'
-export type TicketStatus = 'disponible' | 'vendido' | 'reservado'
+export type TicketStatus = 'disponible' | 'vendido' | 'reservado' | 'usado'
 export type PaymentMethod = 'tarjeta' | 'transferencia' | 'efectivo'
 export type PaymentStatus = 'exitoso' | 'fallido' | 'en_espera'
 export type OrderStatus = 'pendiente' | 'pagada' | 'cancelada'
@@ -84,6 +84,34 @@ export interface Pago {
   fecha_dispersion: string
   estado_escrow: EscrowStatus
   orden_id: string
+}
+
+export interface Validacion {
+  id: string
+  boleto_id: string
+  escaneado_por: string
+  resultado: string
+  motivo?: string
+  fecha_hora: string
+  boleto?: {
+    tipo: string
+  }
+}
+
+export interface EventoStats {
+  boletos: {
+    total_vendidos: number
+    total_usados: number
+    total_restantes: number
+    asistencia_porcentaje: number
+  }
+  resumen_validaciones: {
+    total_intentos: number
+    validos: number
+    invalidos: number
+    ya_usados: number
+  }
+  ultimos_ingresos: Validacion[]
 }
 
 export interface ApiResponse<T> {
