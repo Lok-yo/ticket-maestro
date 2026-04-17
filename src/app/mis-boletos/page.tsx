@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Navbar from '@/Components/layout/Navbar';
 import { TicketCard } from '@/Components/ui/TicketCard';
-import { Ticket } from 'lucide-react';
+import { Ticket, Eye } from 'lucide-react';
 import type { Usuario } from '@/types';
 
 export default async function MisBoletosPage() {
@@ -68,6 +68,7 @@ export default async function MisBoletosPage() {
         ticketsReales.push({
           id: boleto.id,
           qrCodeString: boleto.codigo_qr || `https://ticket-maestro.com/verify/${boleto.id}`, // Fallback al id temporal
+          qrRaw: JSON.stringify({ ticketId: boleto.id }),
           eventName: boleto.evento ? boleto.evento.titulo : 'Evento Desconocido',
           date: formatter.format(fechaEventoRaw),
           location: boleto.evento ? boleto.evento.ubicacion : 'Por definir',
@@ -99,11 +100,20 @@ export default async function MisBoletosPage() {
             <a href="/" className="inline-block bg-pink-600 hover:bg-pink-500 text-white font-bold py-3 px-8 rounded-full transition">Explorar Eventos</a>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {ticketsReales.map((ticket, index) => (
-              <TicketCard key={ticket.id + index.toString()} ticketData={ticket} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {ticketsReales.map((ticket, index) => (
+                <TicketCard key={ticket.id + index.toString()} ticketData={ticket} />
+              ))}
+            </div>
+            <div className="mt-12 bg-white/5 border border-white/10 rounded-2xl p-6 flex items-start gap-4 text-gray-400">
+               <Eye className="w-6 h-6 text-pink-500 shrink-0 mt-1" />
+               <div>
+                  <h4 className="text-white font-bold mb-1">Mantén tus códigos seguros</h4>
+                  <p className="text-sm">Tus códigos QR son únicos y personales. No los compartas en redes sociales para evitar falsificaciones o duplicados el día del evento.</p>
+               </div>
+            </div>
+          </>
         )}
       </main>
     </div>

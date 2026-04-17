@@ -80,7 +80,7 @@ export default function VerifyTicketPage() {
                     <ShieldAlert className="w-24 h-24 text-red-500 mx-auto mb-6"/>
                     <h2 className="text-2xl font-black text-red-400 mb-2">Acceso Denegado</h2>
                     <p className="text-gray-300 font-medium">{errorMsg}</p>
-                    <button onClick={() => router.push('/')} className="mt-8 px-6 py-2 bg-red-500/20 text-red-400 rounded-full font-bold hover:bg-red-500/30 transition">Salir</button>
+                    <button onClick={() => window.history.back()} className="mt-8 px-6 py-2 bg-red-500/20 text-red-400 rounded-full font-bold hover:bg-red-500/30 transition">Volver</button>
                 </div>
             ) : ticketData ? (
                 <div className="relative">
@@ -92,7 +92,7 @@ export default function VerifyTicketPage() {
                     )}
 
                     {successMsg && (
-                       <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-green-500 text-white font-black px-6 py-2 rounded-full uppercase tracking-widest shadow-[0_0_20px_rgba(34,197,94,0.6)] z-20 whitespace-nowrap border-2 border-green-300">
+                       <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-[90%] sm:w-auto text-center bg-green-500 text-white font-black px-4 sm:px-6 py-2 rounded-full uppercase tracking-wider text-xs sm:text-sm shadow-[0_0_20px_rgba(34,197,94,0.6)] z-20 border-2 border-green-300">
                            {successMsg}
                        </div>
                     )}
@@ -138,8 +138,8 @@ export default function VerifyTicketPage() {
                             </div>
                         </div>
 
-                        <div className="p-8 bg-black/50 border-t border-white/5">
-                            {ticketData.estado !== 'usado' ? (
+                        <div className="p-8 bg-black/50 border-t border-white/5 space-y-4">
+                            {ticketData.estado !== 'usado' && !successMsg ? (
                                 <button 
                                     onClick={burnTicket}
                                     disabled={burning}
@@ -147,11 +147,28 @@ export default function VerifyTicketPage() {
                                 >
                                     {burning ? 'Procesando...' : <><CheckCircle2 className="w-6 h-6"/> QUEMAR BOLETO (DAR ACCESO)</>}
                                 </button>
+                            ) : successMsg ? (
+                                <div className="w-full py-4 rounded-xl font-black text-lg bg-green-900/50 text-green-400 border border-green-500/50 text-center uppercase tracking-widest">
+                                    ¡Acceso Permitido!
+                                </div>
                             ) : (
                                 <div className="w-full py-4 rounded-xl font-black text-lg bg-red-950/50 text-red-500 border border-red-900/50 text-center uppercase tracking-widest cursor-not-allowed">
                                     Pase No Válido
                                 </div>
                             )}
+
+                            <button 
+                                onClick={() => {
+                                    if (ticketData?.evento_id) {
+                                        router.push(`/organizador/evento/${ticketData.evento_id}/acceso`);
+                                    } else {
+                                        router.push('/organizador');
+                                    }
+                                }}
+                                className="w-full py-4 rounded-xl font-bold text-lg bg-white/10 text-white hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                            >
+                                Escanear Siguiente
+                            </button>
                         </div>
                     </div>
                 </div>

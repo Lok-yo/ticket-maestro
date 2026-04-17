@@ -14,6 +14,7 @@ interface TicketCardProps {
     type: string;
     price: number;
     userName: string;
+    qrRaw?: string;
   };
 }
 
@@ -22,18 +23,21 @@ export function TicketCard({ ticketData }: TicketCardProps) {
   const ticketRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (ticketData.qrCodeString) {
-      QRCode.toDataURL(ticketData.qrCodeString, {
+    const qrData = ticketData.qrCodeString || ticketData.id;
+    if (qrData) {
+      QRCode.toDataURL(qrData, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
         color: {
           dark: '#000000',
           light: '#ffffff',
         },
-        width: 150,
+        width: 400,
       })
         .then(url => setQrSrc(url))
         .catch(err => console.error(err));
     }
-  }, [ticketData.qrCodeString]);
+  }, [ticketData.id, ticketData.qrCodeString]);
 
   const handleDownload = async () => {
     // Genera un canvas con los datos del boleto y lo descarga como PNG
@@ -175,12 +179,11 @@ export function TicketCard({ ticketData }: TicketCardProps) {
                 <p className="font-bold text-pink-600 text-lg">${ticketData.price.toFixed(2)} MXN</p>
              </div>
           </div>
-          
-          <div className="p-2 bg-white rounded-xl shadow-inner border border-gray-100">
+          <div className="p-2 bg-white rounded-xl shadow-inner border border-gray-100 flex justify-center w-full">
             {qrSrc ? (
-              <img src={qrSrc} alt="Ticket QR Code" className="w-32 h-32 object-contain" />
+              <img src={qrSrc} alt="Ticket QR Code" className="w-48 h-48 object-contain" />
             ) : (
-              <div className="w-32 h-32 bg-gray-200 animate-pulse rounded-lg flex items-center justify-center text-xs text-gray-400">QR Pendiente</div>
+              <div className="w-48 h-48 bg-gray-200 animate-pulse rounded-lg flex items-center justify-center text-xs text-gray-400">QR Pendiente</div>
             )}
           </div>
           

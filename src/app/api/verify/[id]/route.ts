@@ -12,11 +12,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!user) return NextResponse.json({ error: 'Debes iniciar sesión para escanear boletos' }, { status: 401 });
 
     const { data: usuarioDb } = await supabaseUsuario.from('usuario').select('rol').eq('id', user.id).single();
-    if (!usuarioDb || (usuarioDb.rol !== 'organizador' && usuarioDb.rol !== 'admin')) {
-        return NextResponse.json({ error: 'Acceso Denegado. Solo personal autorizado.' }, { status: 403 });
-    }
+    if (!usuarioDb) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
 
-    // 2. Buscar Boleto (usando Admin key para saltar RLS y ver cualquier boleto, aunque idealmente el organizador sólo debería ver los de sus eventos)
+    // 2. Buscar Boleto (usando Admin key)
     const supabaseAdmin = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -29,6 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
          estado,
          tipo,
          codigo_qr,
+         evento_id,
          evento (
              titulo,
              fecha,
@@ -50,9 +49,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ error: 'Boleto Inexistente o Falso.' }, { status: 404 });
     }
 
-    // Opcional: Validar que el organizador que escanea sea el creador del evento
-    if (usuarioDb.rol === 'organizador' && boleto.evento?.organizador_id !== user.id) {
-        return NextResponse.json({ error: 'Este boleto no pertenece a uno de tus eventos organizados.' }, { status: 403 });
+    // 3. Validar permisos (Es admin, es el organizador creador, o es staff con permiso)
+    const isAdmin = usuarioDb.rol === 'admin';
+    const isOwner = boleto.evento?.organizador_id === user.id;
+
+    if (!isAdmin && !isOwner) {
+       // Checar si es staff
+       const { data: staffData } = await supabaseAdmin
+         .from('evento_staff')
+         .select('puede_validar')
+         .eq('evento_id', boleto.evento_id)
+         .eq('usuario_id', user.id)
+         .single();
+         
+       if (!staffData || !staffData.puede_validar) {
+          return NextResponse.json({ error: 'Acceso Denegado. Solo personal autorizado.' }, { status: 403 });
+       }
     }
 
     return NextResponse.json({ data: boleto });
@@ -71,21 +83,46 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
     const { data: usuarioDb } = await supabaseUsuario.from('usuario').select('rol').eq('id', user.id).single();
-    if (!usuarioDb || (usuarioDb.rol !== 'organizador' && usuarioDb.rol !== 'admin')) {
-        return NextResponse.json({ error: 'Acceso Denegado.' }, { status: 403 });
-    }
+    if (!usuarioDb) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
 
     const supabaseAdmin = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Verificamos antes de quemar
-    const { data: checkBoletoRaw } = await supabaseAdmin.from('boleto').select('estado, evento(organizador_id)').eq('id', ticketId).single();
+    // Verificamos el boleto y permisos antes de quemar
+    const { data: checkBoletoRaw } = await supabaseAdmin.from('boleto').select('estado, evento_id, evento(organizador_id)').eq('id', ticketId).single();
     const checkBoleto = checkBoletoRaw as any;
     
     if (!checkBoleto) return NextResponse.json({ error: 'Boleto Inexistente' }, { status: 404 });
-    if (checkBoleto.estado === 'usado') return NextResponse.json({ error: 'Boleto YA FUE USADO.' }, { status: 400 });
+
+    // Permisos
+    const isAdmin = usuarioDb.rol === 'admin';
+    const isOwner = checkBoleto.evento?.organizador_id === user.id;
+
+    if (!isAdmin && !isOwner) {
+       const { data: staffData } = await supabaseAdmin
+         .from('evento_staff')
+         .select('puede_validar')
+         .eq('evento_id', checkBoleto.evento_id)
+         .eq('usuario_id', user.id)
+         .single();
+         
+       if (!staffData || !staffData.puede_validar) {
+          return NextResponse.json({ error: 'Acceso Denegado.' }, { status: 403 });
+       }
+    }
+
+    if (checkBoleto.estado === 'usado') {
+       // Log failed attempt
+       await supabaseAdmin.from('validacion').insert({
+         boleto_id: ticketId,
+         escaneado_por: user.id,
+         resultado: 'ya_usado',
+         motivo: 'El boleto ya había sido escaneado'
+       });
+       return NextResponse.json({ error: 'Boleto YA FUE USADO.' }, { status: 400 });
+    }
 
     const { data: updatedBoleto, error } = await supabaseAdmin
       .from('boleto')
@@ -95,6 +132,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .single();
 
     if (error) throw error;
+
+    // Registrar en 'validacion' para el reporte
+    await supabaseAdmin.from('validacion').insert({
+      boleto_id: ticketId,
+      escaneado_por: user.id,
+      resultado: 'valido'
+    });
 
     return NextResponse.json({ success: true, estado: updatedBoleto.estado });
   } catch (e: any) {

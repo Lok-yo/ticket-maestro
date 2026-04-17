@@ -137,6 +137,10 @@ function CheckoutFormContent() {
         // Si el pago es exitoso, el Webhook en /api/webhooks/stripe es el que confirmará
         // la entrada en BD. Nosotros navegamos confiando en el intent successful.
         setIsProcessing(false);
+        
+        // Limpiar el timer de la sesión para que el usuario pueda volver a comprar
+        sessionStorage.removeItem(`ticket-timer-${eventId}`);
+        
         const successUrl = new URLSearchParams({
             title: eventTitle,
             type,

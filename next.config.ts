@@ -13,6 +13,8 @@ const nextConfig = {
       },
     ],
   },
+  // @ts-ignore - Permitiendo propiedad custom
+  allowedDevOrigins: ['192.168.1.72'],
 };
 
-module.exports = nextConfig;
+export default nextConfig;
