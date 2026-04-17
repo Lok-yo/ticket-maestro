@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Navbar from '@/Components/layout/Navbar';
 import Link from 'next/link';
+import Image from 'next/image';
 import { CalendarDays, Users, BarChart3, Plus, TrendingUp, Presentation } from 'lucide-react';
 import type { Usuario, Evento } from '@/types';
 import DeleteEventButton from '@/Components/ui/DeleteEventButton';
@@ -166,11 +167,15 @@ export default async function OrganizadorPage() {
               <div key={evento.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:bg-white/10 transition-colors relative flex flex-col">
                  <div className="h-48 bg-zinc-800 relative">
                     {isOwner && <DeleteEventButton eventId={evento.id} eventTitle={evento.titulo} />}
-                    <img 
-                       src={evento.imagen || `https://picsum.photos/seed/${evento.id}/400/250`} 
-                       alt={evento.titulo} 
-                       className="w-full h-full object-cover opacity-80" 
-                    />
+                    <div className="relative w-full h-full">
+                       <Image 
+                          src={evento.imagen || `https://picsum.photos/seed/${evento.id}/400/250`} 
+                          alt={evento.titulo} 
+                          fill
+                          className="object-cover opacity-80" 
+                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                       />
+                    </div>
                     <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md text-xs font-bold py-1 px-3 rounded-full text-white/90 z-10">
                        {evento.estado.toUpperCase()}
                     </div>

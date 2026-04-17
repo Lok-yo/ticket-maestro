@@ -11,17 +11,20 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
     const { eventKey, seatIds } = await req.json();
-    if (!eventKey || !seatIds?.length) {
-      return NextResponse.json({ error: 'Faltan eventKey o seatIds' }, { status: 400 });
-    }
+    console.log(`[HOLD] Iniciando para evento: ${eventKey}, asientos: ${seatIds}`);
 
     const secretKey = process.env.SEATS_IO_SECRET_KEY;
-    if (!secretKey) return NextResponse.json({ error: 'Secret key no configurada' }, { status: 500 });
+    if (!secretKey) {
+      console.error('[HOLD] ERROR: SEATS_IO_SECRET_KEY no encontrada en .env.local');
+      return NextResponse.json({ error: 'Secret key no configurada' }, { status: 500 });
+    }
 
     const auth = 'Basic ' + Buffer.from(secretKey + ':').toString('base64');
+    const baseUrl = `https://api-${REGION}.seatsio.net`;
 
     // 1. Crear hold token
-    const tokenRes = await fetch(`https://api-${REGION}.seatsio.net/hold-tokens`, {
+    console.log(`[HOLD] Solicitando token a ${baseUrl}/hold-tokens...`);
+    const tokenRes = await fetch(`${baseUrl}/hold-tokens`, {
       method: 'POST',
       headers: {
         'Authorization': auth,
@@ -30,30 +33,34 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({ expiresInMinutes: 15 }),
     });
 
+    const tokenData = await tokenRes.json();
     if (!tokenRes.ok) {
-      const err = await tokenRes.text();
-      console.error('Error creando hold token:', err);
-      return NextResponse.json({ error: 'Error en seats.io (hold token)' }, { status: 500 });
+      console.error('[HOLD] Error creando token:', tokenData);
+      return NextResponse.json({ error: 'Error en seats.io (hold token)', details: tokenData }, { status: tokenRes.status });
     }
 
-    const { token: holdToken } = await tokenRes.json();
+    console.log('[HOLD] Respuesta completa del token:', JSON.stringify(tokenData));
+    const holdToken = tokenData.token || tokenData.holdToken; // Por si acaso usan otro nombre
+    console.log(`[HOLD] Token extraído: ${holdToken}`);
 
     // 2. Hacer hold de los asientos
-    const holdRes = await fetch(`https://api-${REGION}.seatsio.net/events/${eventKey}/actions/hold`, {
+    console.log(`[HOLD] Reservando asientos con el token...`);
+    const holdRes = await fetch(`${baseUrl}/events/${eventKey}/actions/hold`, {
       method: 'POST',
       headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
       body: JSON.stringify({ objects: seatIds, holdToken }),
     });
 
     if (!holdRes.ok) {
-      const err = await holdRes.text();
-      console.error('Error holding seats:', err);
-      return NextResponse.json({ error: 'No se pudieron reservar los asientos' }, { status: 409 });
+      const holdError = await holdRes.json();
+      console.error('[HOLD] Error al reservar asientos:', holdError);
+      return NextResponse.json({ error: 'No se pudieron reservar los asientos', details: holdError }, { status: 409 });
     }
 
+    console.log(`[HOLD] Asientos reservados con éxito.`);
     return NextResponse.json({ holdToken });
   } catch (error: any) {
-    console.error('Error en /api/seats/hold:', error);
+    console.error('[HOLD] Error crítico:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

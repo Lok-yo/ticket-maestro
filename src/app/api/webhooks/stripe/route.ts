@@ -155,13 +155,25 @@ export async function POST(request: NextRequest) {
           await bookSeatsInSeatsIo(seatIds, holdToken, seatsEventKey);
 
           // Actualizar tabla asiento en Supabase
-          await supabase
-            .from('asiento')
-            .update({ 
-              estado: 'vendido', 
-              hold_token: null 
-            })
-            .in('seats_object_id', seatIds);
+          const eventoIdMeta = primerBoleto?.evento_id as string | undefined;
+          if (eventoIdMeta) {
+            await supabase
+              .from('asiento')
+              .update({
+                estado: 'vendido',
+                hold_token: null,
+              })
+              .eq('evento_id', eventoIdMeta)
+              .in('seats_object_id', seatIds);
+          } else {
+            await supabase
+              .from('asiento')
+              .update({
+                estado: 'vendido',
+                hold_token: null,
+              })
+              .in('seats_object_id', seatIds);
+          }
         }
 
         // Calcular monto retenido y actualizar balance del organizador (tu lógica original)

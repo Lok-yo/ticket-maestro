@@ -1,35 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
+import { randomUUID } from 'crypto';
+import { seatCategoryMatchesTicketType } from '@/lib/seatCategories';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
   apiVersion: '2025-02-24.acacia' as any,
 });
-
-// Helper para hacer hold en seats.io (solo por seguridad, aunque ya lo hacemos en /api/seats/hold)
-async function holdSeatsInSeatsIo(
-  eventKey: string,
-  seatIds: string[],
-  holdToken: string,
-  secretKey: string
-) {
-  const REGION = 'na';
-  const auth = 'Basic ' + Buffer.from(secretKey + ':').toString('base64');
-
-  const res = await fetch(`https://api-${REGION}.seatsio.net/events/${eventKey}/actions/hold`, {
-    method: 'POST',
-    headers: {
-      'Authorization': auth,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ objects: seatIds, holdToken }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`seats.io hold error: ${err}`);
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,36 +21,40 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     
     // === DESTRUCTURING ACTUALIZADO CON CAMPOS DE SEATS.IO ===
-    const { 
-      eventId, 
-      type, 
-      qty, 
-      name, 
-      email, 
-      phone, 
-      price, 
+    const {
+      eventId,
+      type,
+      qty,
+      name,
+      email,
+      phone,
+      price,
       tipoBoletoId,
-      // NUEVOS CAMPOS PARA SEATS.IO
-      seatIds = [],           // Ej: ["A-101", "A-102"]
-      holdToken = '',         // Token de reserva temporal
-      seatsEventKey = ''      // Key del evento en seats.io
+      seatIds: seatIdsRaw = [],
+      holdToken = '',
+      seatsEventKey = '',
+      seatDetails: seatDetailsRaw = [],
     } = body;
 
-    if (!eventId || !qty || qty <= 0 || !price) {
-      return NextResponse.json({ error: 'Faltan datos requeridos (evento, cantidad, precio).' }, { status: 400 });
+    const seatIds: string[] = Array.isArray(seatIdsRaw) ? seatIdsRaw : [];
+    const seatDetails: { objectId?: string; label?: string; category?: string }[] = Array.isArray(
+      seatDetailsRaw
+    )
+      ? seatDetailsRaw
+      : [];
+
+    if (!eventId || !qty || qty <= 0) {
+      return NextResponse.json({ error: 'Faltan datos requeridos (evento, cantidad).' }, { status: 400 });
     }
 
-    // === NUEVA VALIDACIÓN PARA SEATS.IO ===
+    if (!tipoBoletoId && (price === undefined || price === null || parseFloat(String(price)) <= 0)) {
+      return NextResponse.json(
+        { error: 'Faltan datos requeridos (precio o tipo de boleto).' },
+        { status: 400 }
+      );
+    }
+
     const seatsSecretKey = process.env.SEATS_IO_SECRET_KEY;
-    const usingSeatsIo = seatIds?.length > 0 && holdToken && seatsEventKey && seatsSecretKey;
-
-    if (usingSeatsIo) {
-      if (seatIds.length !== qty) {
-        return NextResponse.json({ 
-          error: `Seleccionaste ${seatIds.length} asiento(s) pero indicaste ${qty} boleto(s).` 
-        }, { status: 400 });
-      }
-    }
 
     // 1. Obtener Evento de DB para validar
     const { data: evento, error: eventError } = await supabase
@@ -86,7 +67,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Evento no encontrado.' }, { status: 404 });
     }
 
+    const hasSeatMapConfigured = !!evento.seats_evento_key;
+    let usingSeatsIo = false;
+
+    if (hasSeatMapConfigured) {
+      if (!tipoBoletoId) {
+        return NextResponse.json(
+          { error: 'Este evento requiere un tipo de boleto válido para comprar con mapa de asientos.' },
+          { status: 400 }
+        );
+      }
+      if (
+        !seatsSecretKey ||
+        !holdToken ||
+        seatIds.length !== qty ||
+        seatIds.length === 0 ||
+        seatsEventKey !== evento.seats_evento_key
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Este evento requiere una selección de asientos válida en el mapa (misma sesión y evento).',
+          },
+          { status: 400 }
+        );
+      }
+      usingSeatsIo = true;
+    }
+
     // 2. Validar stock del tipo de boleto seleccionado
+    let basePrice = 0;
+    let tipoNombreBoleto = String(type || 'General');
+
     if (tipoBoletoId) {
       const { data: tipoBoleto, error: tipoError } = await supabase
         .from('tipo_boleto')
@@ -105,12 +117,29 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
 
-      const precioReal = parseFloat(tipoBoleto.precio);
-      const precioEnviado = parseFloat(price);
-      if (Math.abs(precioReal - precioEnviado) > 0.01) {
-        return NextResponse.json({ 
-          error: 'El precio no coincide con la configuración actual. Recarga la página e intenta de nuevo.' 
-        }, { status: 400 });
+      basePrice = parseFloat(String(tipoBoleto.precio));
+      tipoNombreBoleto = String(tipoBoleto.nombre);
+
+      if (usingSeatsIo) {
+        for (const objectId of seatIds) {
+          const det = seatDetails.find((d) => d.objectId === objectId);
+          const cat = det?.category || type;
+          if (!seatCategoryMatchesTicketType(String(cat), String(tipoBoleto.nombre))) {
+            return NextResponse.json(
+              {
+                error: `Los asientos deben ser de la zona "${tipoBoleto.nombre}" para el tipo de boleto elegido.`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
+
+      if (type && !seatCategoryMatchesTicketType(String(type), String(tipoBoleto.nombre))) {
+        return NextResponse.json(
+          { error: 'El tipo de boleto no coincide con la zona seleccionada.' },
+          { status: 400 }
+        );
       }
 
       // Decrementar stock
@@ -124,6 +153,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Error al reservar boletos. Intenta de nuevo.' }, { status: 500 });
       }
     } else {
+      basePrice = parseFloat(String(price));
       // Flujo legacy...
       const { count: boletosVendidos, error: countError } = await supabase
         .from('boleto')
@@ -144,7 +174,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const basePrice = parseFloat(price); 
     const subtotal = basePrice * qty;
     const cargoServicio = subtotal * 0.10;
     const total = subtotal + cargoServicio;
@@ -201,19 +230,50 @@ export async function POST(req: NextRequest) {
       console.warn('Advertencia DB: No se pudo registrar el pago inicial.', pagoError);
     }
 
+    const asientoRowMeta: { id: string; objectId: string; etiqueta: string }[] = [];
+
+    if (usingSeatsIo) {
+      const asientosToInsert = seatIds.map((objectId: string) => {
+        const det = seatDetails.find((d) => d.objectId === objectId);
+        const rowId = randomUUID();
+        const etiqueta = det?.label || objectId;
+        const categoria = det?.category || tipoNombreBoleto;
+        asientoRowMeta.push({ id: rowId, objectId, etiqueta });
+        return {
+          id: rowId,
+          evento_id: eventId,
+          etiqueta,
+          categoria,
+          precio: basePrice,
+          estado: 'reservado' as const,
+          seats_object_id: objectId,
+        };
+      });
+
+      const { error: asientoErr } = await supabase.from('asiento').insert(asientosToInsert);
+      if (asientoErr) {
+        console.warn('Advertencia DB: No se pudieron sincronizar los asientos.', asientoErr);
+      }
+    }
+
+    const objectIdToAsientoId = new Map(asientoRowMeta.map((m) => [m.objectId, m.id]));
+
     // === BOLETOS CON SOPORTE PARA ASIENTOS ===
     const boletosToInsert = Array.from({ length: qty }).map((_, index) => {
       const bolId = `BOL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      const oid = usingSeatsIo ? seatIds[index] : null;
+      const asientoDbId = oid ? objectIdToAsientoId.get(oid) : null;
+      const meta = asientoRowMeta.find((m) => m.objectId === oid);
       return {
         id: bolId,
         evento_id: eventId,
         orden_id: orden.id,
         precio: basePrice * 1.10,
-        tipo: type,
-        estado: 'reservado', 
-        codigo_qr: `PENDIENTE-${bolId}`,
-        // NUEVO: Guardar asiento si viene de seats.io
-        asiento_id: usingSeatsIo && seatIds[index] ? seatIds[index] : null,
+        tipo: tipoNombreBoleto,
+        estado: 'reservado' as const,
+        codigo_qr: bolId,
+        asiento_id: asientoDbId || null,
+        etiqueta_asiento: meta?.etiqueta || (oid ?? null),
       };
     });
 
@@ -241,12 +301,12 @@ export async function POST(req: NextRequest) {
         evento_id: eventId,
         user_id: user.id,
         tipo_boleto_id: tipoBoletoId || '',
-        tipo_boleto_nombre: type,
+        tipo_boleto_nombre: tipoNombreBoleto,
         cantidad: qty.toString(),
         // === NUEVOS METADATA PARA SEATS.IO ===
         seat_ids: usingSeatsIo ? JSON.stringify(seatIds) : '',
         hold_token: holdToken || '',
-        seats_event_key: seatsEventKey || '',
+        seats_event_key: usingSeatsIo ? String(evento.seats_evento_key || '') : '',
       },
     });
 

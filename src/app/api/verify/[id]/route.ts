@@ -4,9 +4,24 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id: ticketId } = await params;
+    let { id: ticketId } = await params;
     const { searchParams } = new URL(request.url);
     const eventIdParam = searchParams.get('event');
+    
+    console.log(`[VERIFY] Buscando boleto: ${ticketId}`);
+
+    // NUEVO: Si el ID parece un Base64 (muy largo), intentar decodificarlo
+    if (ticketId.length > 50) {
+      try {
+        const decoded = JSON.parse(Buffer.from(ticketId, 'base64').toString());
+        if (decoded.ticketId) {
+          console.log(`[VERIFY] ID decodificado de QR: ${decoded.ticketId}`);
+          ticketId = decoded.ticketId;
+        }
+      } catch (e) {
+        console.log('[VERIFY] No era un QR codificado, usando ID original');
+      }
+    }
     
     const supabaseUsuario = await createClient();
 
@@ -37,7 +52,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
              organizador_id
          ),
          orden (
-             usuario (
+             usuario!fk_orden_usuario (
                  nombre,
                  email
              )
@@ -45,6 +60,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       `)
       .eq('id', ticketId)
       .single();
+
+    if (error) {
+      console.error(`[VERIFY] Error en DB para ${ticketId}:`, error);
+    }
 
     const boleto = boletoRaw as any;
 
@@ -90,9 +109,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 // PUT: Quemar boleto (marcar usado)
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id: ticketId } = await params;
+    let { id: ticketId } = await params;
     const { searchParams } = new URL(request.url);
     const eventIdParam = searchParams.get('event');
+
+    // NUEVO: Decodificar si es Base64
+    if (ticketId.length > 50) {
+      try {
+        const decoded = JSON.parse(Buffer.from(ticketId, 'base64').toString());
+        if (decoded.ticketId) ticketId = decoded.ticketId;
+      } catch (e) {}
+    }
 
     const supabaseUsuario = await createClient();
 

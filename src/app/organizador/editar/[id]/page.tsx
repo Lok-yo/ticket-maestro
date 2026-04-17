@@ -6,6 +6,8 @@ import Navbar from '@/Components/layout/Navbar';
 import { Loader2, Music, MapPin, Calendar, Users, DollarSign, ArrowLeft, Image as ImageIcon, ChevronLeft, ChevronRight, Clock, Ticket } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { toast } from 'sonner';
+import { VENUE_SEAT_STOCKS } from '@/lib/seatCategories';
 
 const UBICACIONES = [
   { value: 'San Luis Potosi', label: 'San Luis Potosi' },
@@ -37,6 +39,9 @@ export default function EditarEventoPage() {
     { nombre: 'Preferente', precio: 1200, stock_total: 50, descripcion: 'Mejor vista y acceso preferencial.', max_por_compra: 5, enabled: true },
     { nombre: 'VIP', precio: 2000, stock_total: 10, descripcion: 'Acceso exclusivo y amenidades VIP.', max_por_compra: 2, enabled: true },
   ]);
+
+  const [hasSeatsMap, setHasSeatsMap] = useState(false);
+  const [usarMapaSeats, setUsarMapaSeats] = useState(false);
 
   const capacidadTotal = tiposBoleto.filter(t => t.enabled).reduce((acc, t) => acc + t.stock_total, 0);
 
@@ -72,6 +77,7 @@ export default function EditarEventoPage() {
              if (evtError || !eventoInfo) {
                 setErrorMsg("No se encontro el evento o no tienes permisos.");
              } else {
+                setHasSeatsMap(!!eventoInfo.seats_evento_key);
                 setFormData({
                    titulo: eventoInfo.titulo || '',
                    descripcion: eventoInfo.descripcion || '',
@@ -133,6 +139,15 @@ export default function EditarEventoPage() {
     fetchData();
   }, [supabase, id]);
 
+  const applyVenueStocksToState = () => {
+    setTiposBoleto(prev =>
+      prev.map(t => {
+        const fixed = VENUE_SEAT_STOCKS[t.nombre];
+        return fixed !== undefined ? { ...t, stock_total: fixed, enabled: true } : t;
+      })
+    );
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
@@ -140,9 +155,24 @@ export default function EditarEventoPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDate) { setErrorMsg("Debes seleccionar una fecha."); return; }
+    if (!selectedDate) { 
+      const msg = "Debes seleccionar una fecha.";
+      setErrorMsg(msg); 
+      toast.error(msg);
+      return; 
+    }
     setLoading(true);
     setErrorMsg('');
+
+    if (formData.imagen && formData.imagen.startsWith('http')) {
+       if (!/\.(jpeg|jpg|gif|png|webp|avif)$/i.test(formData.imagen) && !formData.imagen.includes('imgur') && !formData.imagen.includes('picsum')) {
+           const msg = "La URL de la imagen debe provenir de imgur o terminar en una extension de imagen valida (.png, .jpg, etc).";
+           setErrorMsg(msg); 
+           toast.error(msg);
+           setLoading(false);
+           return;
+       }
+    }
 
     try {
       const [hours, minutes] = timeStr.split(':');
@@ -150,7 +180,31 @@ export default function EditarEventoPage() {
       finalDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
 
       const tiposActivos = tiposBoleto.filter(t => t.enabled);
-      if (tiposActivos.length === 0) { setErrorMsg('Debes habilitar al menos un tipo de boleto.'); setLoading(false); return; }
+      if (tiposActivos.length === 0) { 
+        const msg = 'Debes habilitar al menos un tipo de boleto.';
+        setErrorMsg(msg); 
+        toast.error(msg);
+        setLoading(false); 
+        return; 
+      }
+
+      // Validaciones adicionales
+      for (const t of tiposActivos) {
+        if (t.precio < 50) {
+          const msg = `El precio para "${t.nombre}" debe ser de al menos $50 MXN.`;
+          setErrorMsg(msg);
+          toast.error(msg);
+          setLoading(false);
+          return;
+        }
+        if (t.max_por_compra > t.stock_total) {
+          const msg = `El límite máximo por compra (${t.max_por_compra}) para "${t.nombre}" no puede ser mayor que el stock total (${t.stock_total}).`;
+          setErrorMsg(msg);
+          toast.error(msg);
+          setLoading(false);
+          return;
+        }
+      }
 
       const res = await fetch(`/api/events/${id}`, {
         method: 'PUT',
@@ -160,6 +214,7 @@ export default function EditarEventoPage() {
             capacidad: capacidadTotal,
             precio_base: Math.min(...tiposActivos.map(t => t.precio)),
             fecha: finalDateTime.toISOString(),
+            usar_mapa_seats: usarMapaSeats,
             tipos_boleto: tiposActivos.map(t => ({
               nombre: t.nombre, precio: t.precio, stock_total: t.stock_total,
               descripcion: t.descripcion, max_por_compra: t.max_por_compra,
@@ -168,9 +223,13 @@ export default function EditarEventoPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Error desconocido al actualizar');
+      toast.success('Evento actualizado correctamente');
       router.push('/organizador');
       router.refresh(); 
-    } catch (err: any) { setErrorMsg(err.message); } finally { setLoading(false); }
+    } catch (err: any) { 
+      setErrorMsg(err.message); 
+      toast.error(err.message);
+    } finally { setLoading(false); }
   };
 
   const advanceMonth = (offset: number) => {
@@ -257,12 +316,12 @@ export default function EditarEventoPage() {
                                   <input type="file" accept="image/*" onChange={async (e) => {
                                       const file = e.target.files?.[0];
                                       if (file) {
-                                          if (file.size > 2 * 1024 * 1024) { alert("Imagen menor a 2MB"); return; }
+                                          if (file.size > 2 * 1024 * 1024) { toast.error("Imagen menor a 2MB"); return; }
                                           setLoading(true);
                                           const fileExt = file.name.split('.').pop();
                                           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
                                           const { error: uploadError } = await supabase.storage.from('eventos').upload(fileName, file);
-                                          if (uploadError) { alert("Error: " + uploadError.message); setLoading(false); return; }
+                                          if (uploadError) { toast.error("Error: " + uploadError.message); setLoading(false); return; }
                                           const { data } = supabase.storage.from('eventos').getPublicUrl(fileName);
                                           setFormData(prev => ({ ...prev, imagen: data.publicUrl }));
                                           setLoading(false);
@@ -312,12 +371,40 @@ export default function EditarEventoPage() {
                        </select>
                    </div>
 
+                   <div className="space-y-3 md:col-span-2 bg-[#1a1625] border border-white/10 rounded-2xl p-5">
+                       <label className={`flex items-start gap-3 ${hasSeatsMap ? 'cursor-default' : 'cursor-pointer'}`}>
+                         <input
+                           type="checkbox"
+                           checked={hasSeatsMap || usarMapaSeats}
+                           disabled={hasSeatsMap}
+                           onChange={(e) => {
+                             const v = e.target.checked;
+                             setUsarMapaSeats(v);
+                             if (v) applyVenueStocksToState();
+                           }}
+                           className="mt-1 w-5 h-5 rounded border-white/20 text-pink-600 focus:ring-pink-500 disabled:opacity-60"
+                         />
+                         <span>
+                           <span className="font-bold text-white block">Usar mapa de asientos (seats.io)</span>
+                           <span className="text-xs text-gray-400">
+                             {hasSeatsMap
+                               ? 'Este evento ya tiene un mapa vinculado; los stocks General / Preferente / VIP siguen el recinto.'
+                               : 'Al activar y guardar, se crea el evento en seats.io. Stocks: General 402, Preferente 217, VIP 241.'}
+                           </span>
+                         </span>
+                       </label>
+                   </div>
+
                    {/* CONFIGURACION DE TIPOS DE BOLETO */}
                    <div className="space-y-4 md:col-span-2">
                        <label className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
                           <Ticket className="w-4 h-4 text-purple-400"/> Configuracion de Boletos
                        </label>
-                       <p className="text-xs text-gray-500 -mt-2">Define precio y stock para cada zona.</p>
+                       <p className="text-xs text-gray-500 -mt-2">
+                         {hasSeatsMap || usarMapaSeats
+                           ? 'Con mapa activo, los stocks de General / Preferente / VIP coinciden con el chart (solo editas precios).'
+                           : 'Define precio y stock para cada zona.'}
+                       </p>
                        
                        <div className="space-y-3">
                          {tiposBoleto.map((tipo, index) => (
@@ -340,8 +427,10 @@ export default function EditarEventoPage() {
                                  </div>
                                  <div>
                                    <label className="block text-xs text-gray-500 mb-1 font-medium">Stock (cantidad)</label>
-                                   <input type="number" min="0" value={tipo.stock_total} onChange={(e) => { const u = [...tiposBoleto]; u[index].stock_total = Number(e.target.value); setTiposBoleto(u); }}
-                                     className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium" />
+                                   <input type="number" min="0" value={tipo.stock_total}
+                                     disabled={(hasSeatsMap || usarMapaSeats) && VENUE_SEAT_STOCKS[tipo.nombre] !== undefined}
+                                     onChange={(e) => { const u = [...tiposBoleto]; u[index].stock_total = Number(e.target.value); setTiposBoleto(u); }}
+                                     className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium disabled:opacity-60 disabled:cursor-not-allowed" />
                                  </div>
                                  <div>
                                    <label className="block text-xs text-gray-500 mb-1 font-medium">Max por compra</label>

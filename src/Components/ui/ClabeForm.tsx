@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Landmark, Loader2, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 export default function ClabeForm({ initialClabe }: { initialClabe?: string | null }) {
   const [clabe, setClabe] = useState(initialClabe || '');
@@ -12,7 +13,7 @@ export default function ClabeForm({ initialClabe }: { initialClabe?: string | nu
 
   const handleSave = async () => {
     if (clabe.length !== 18) {
-        alert('La CLABE deber tener 18 dígitos.');
+        toast.error('La CLABE deber tener 18 dígitos.');
         return;
     }
     setLoading(true);
@@ -26,10 +27,11 @@ export default function ClabeForm({ initialClabe }: { initialClabe?: string | nu
         if (!res.ok) throw new Error(data.error);
         
         setSaved(true);
+        toast.success('CLABE guardada exitosamente');
         setTimeout(() => setSaved(false), 3000);
         router.refresh();
     } catch (err: any) {
-        alert(err.message || 'Error al guardar la CLABE.');
+        toast.error(err.message || 'Error al guardar la CLABE.');
     } finally {
         setLoading(false);
     }

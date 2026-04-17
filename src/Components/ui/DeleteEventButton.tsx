@@ -3,6 +3,7 @@
 import { Trash2, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 export default function DeleteEventButton({ eventId, eventTitle }: { eventId: string, eventTitle: string }) {
    const [loading, setLoading] = useState(false);
@@ -24,13 +25,13 @@ export default function DeleteEventButton({ eventId, eventTitle }: { eventId: st
            const data = await res.json();
            
            if (!res.ok) {
-               alert(`🚨 No se pudo eliminar:\n\n${data.error || 'Error desconocido'}`);
+               toast.error(`No se pudo eliminar: ${data.error || 'Error desconocido'}`);
            } else {
-               alert('✅ Evento eliminado exitosamente.');
+               toast.success('Evento eliminado exitosamente.');
                router.refresh();
            }
        } catch (err) {
-           alert('❌ Error de conexión al intentar eliminar.');
+           toast.error('Error de conexión al intentar eliminar.');
        } finally {
            setLoading(false);
        }

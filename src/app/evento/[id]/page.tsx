@@ -80,9 +80,10 @@ export default function EventDetailPage() {
       qty: quantity.toString(),
       eventTitle: eventData?.titulo || '',
       tipoBoletoId: selectedType.isFallback === false ? selectedType.id : '',
-      // NUEVO: Pasamos la clave del evento en seats.io
-      seatsEventKey: eventData?.seats_evento_key || process.env.NEXT_PUBLIC_SEATS_IO_CHART_KEY || '',
     });
+    if (eventData?.seats_evento_key) {
+      searchParams.set('seatsEventKey', eventData.seats_evento_key);
+    }
 
     router.push(`/checkout/${eventId}?${searchParams.toString()}`);
   };

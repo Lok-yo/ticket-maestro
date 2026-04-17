@@ -47,6 +47,8 @@ export const createEventSchema = z.object({
     .or(z.literal('')),
   // Nuevos: tipos de boleto con precio y stock individual
   tipos_boleto: z.array(tipoBoletoSchema).min(1, 'Debes configurar al menos un tipo de boleto').optional(),
+  /** Si es true, se crea un evento en seats.io por evento y se fijan stocks del venue (402/217/241). */
+  usar_mapa_seats: z.boolean().optional().default(false),
 })
 
 export const updateEventSchema = createEventSchema.partial().extend({

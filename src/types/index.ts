@@ -46,6 +46,10 @@ export interface Evento {
   organizador_id?: string
   precio_base?: number
   imagen?: string
+  /** Clave del chart en seats.io (venue). */
+  seats_chart_key?: string | null
+  /** Clave del evento en seats.io (una por evento de BD). */
+  seats_evento_key?: string | null
   tipo_boleto?: TipoBoleto[]  // Relación con tipos de boleto
 }
 

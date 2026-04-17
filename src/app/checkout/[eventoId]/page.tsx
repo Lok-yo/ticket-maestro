@@ -8,6 +8,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import Navbar from '@/Components/layout/Navbar';
 import { createClient } from '@/lib/supabase/client';
+import { categoryKeysForSeatsIoFilter, seatCategoryMatchesTicketType } from '@/lib/seatCategories';
 // @ts-ignore
 import { SeatsioSeatingChart } from '@seatsio/seatsio-react';
 
@@ -24,16 +25,19 @@ interface SelectedSeat {
 function SeatSelectionStep({
   eventData,
   seatsEventKey,
+  requiredQty,
+  requiredType,
   onSeatsConfirmed,
 }: {
   eventData: any;
   seatsEventKey: string;
+  requiredQty: number;
+  requiredType: string;
   onSeatsConfirmed: (seats: SelectedSeat[], holdToken: string) => void;
 }) {
   const [selectedSeats, setSelectedSeats] = useState<SelectedSeat[]>([]);
   const [isHolding, setIsHolding] = useState(false);
   const [error, setError] = useState('');
-  const [chartLoaded, setChartLoaded] = useState(false);
 
   // Mapeo de categorías de seats.io a precios (ajústalo según tus categorías reales)
   const categoryPriceMap: Record<string, number> = {
@@ -61,6 +65,16 @@ function SeatSelectionStep({
   const handleConfirmSeats = async () => {
     if (selectedSeats.length === 0) {
       setError('Selecciona al menos un asiento para continuar.');
+      return;
+    }
+    if (selectedSeats.length !== requiredQty) {
+      setError(`Debes seleccionar exactamente ${requiredQty} asiento(s) (tienes ${selectedSeats.length}).`);
+      return;
+    }
+    const zone = requiredType || 'General';
+    const wrongZone = selectedSeats.some((s) => !seatCategoryMatchesTicketType(s.category, zone));
+    if (wrongZone) {
+      setError(`Todos los asientos deben ser de la zona "${zone}".`);
       return;
     }
 
@@ -96,7 +110,11 @@ function SeatSelectionStep({
       <Navbar user={null} />
       <div className="max-w-7xl mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-2">Selecciona tus Asientos</h1>
-        <p className="text-gray-400 mb-8">{eventData?.titulo}</p>
+        <p className="text-gray-400 mb-4">{eventData?.titulo}</p>
+        <div className="mb-6 rounded-2xl border border-pink-500/40 bg-pink-500/10 px-4 py-3 text-sm text-pink-100">
+          Debes elegir exactamente <strong>{requiredQty}</strong> asiento{requiredQty !== 1 ? 's' : ''} en la zona{' '}
+          <strong>{requiredType || 'General'}</strong>. Otra zona o cantidad no será válida al pagar.
+        </div>
 
         {/* Mapa de asientos */}
         <div className="rounded-3xl overflow-hidden border border-white/10 mb-8" style={{ height: '620px' }}>
@@ -108,11 +126,14 @@ function SeatSelectionStep({
             colorScheme="dark"
             onObjectSelected={handleObjectSelected}
             onObjectDeselected={handleObjectDeselected}
-            onRenderStarted={() => setChartLoaded(true)}
             pricing={Object.entries(categoryPriceMap).map(([category, price]) => ({
               category,
               price,
             }))}
+            maxSelectedObjects={requiredQty}
+            selectableObjects={
+              requiredType ? categoryKeysForSeatsIoFilter(requiredType) : undefined
+            }
             showSectionContents="onlyAfterZoom"
             tooltipInfo={(obj: any) => `$${categoryPriceMap[obj.category?.label] || 0} MXN`}
           />
@@ -178,14 +199,14 @@ function CheckoutPageContent() {
   const searchParams = useSearchParams();
   const eventId = params.eventoId as string;
 
-  const seatsEventKey = searchParams.get('seatsEventKey') || process.env.NEXT_PUBLIC_SEATS_IO_CHART_KEY || '';
-
-  // Estados del flujo
-  const [flowStep, setFlowStep] = useState<'seats' | 'checkout'>('seats');
+  const [flowStep, setFlowStep] = useState<'seats' | 'checkout' | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<SelectedSeat[]>([]);
   const [holdToken, setHoldToken] = useState('');
   const [eventData, setEventData] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
+
+  const usesSeatMap = !!(eventData?.seats_evento_key);
+  const resolvedSeatsEventKey = (eventData?.seats_evento_key as string) || '';
 
   // Estados del formulario de pago
   const [step, setStep] = useState(1);
@@ -214,7 +235,6 @@ function CheckoutPageContent() {
         return;
       }
 
-      // Cargar perfil del usuario
       const { data: profile } = await supabase
         .from('usuario')
         .select('nombre, email')
@@ -222,44 +242,85 @@ function CheckoutPageContent() {
         .single();
 
       if (profile) {
-        setFormData({ 
-          name: profile.nombre || '', 
-          email: profile.email || '', 
-          phone: '' 
+        setFormData({
+          name: profile.nombre || '',
+          email: profile.email || '',
+          phone: ''
         });
       }
 
-      // Cargar datos del evento
-      const { data: evento } = await supabase
+      const { data: evento, error: evErr } = await supabase
         .from('evento')
         .select('*, tipo_boleto(*)')
         .eq('id', eventId)
         .single();
 
-      if (evento) setEventData(evento);
+      if (evErr || !evento) {
+        router.push('/');
+        return;
+      }
+
+      setEventData(evento);
+
+      const urlSeats = searchParams.get('seatsEventKey');
+      if (urlSeats && evento.seats_evento_key && urlSeats !== evento.seats_evento_key) {
+        console.warn('seatsEventKey de URL no coincide con el evento; se usa el de la base de datos.');
+      }
+
+      const qtyParam = Math.max(1, Math.min(20, Number(searchParams.get('qty')) || 1));
+      const typeParam = searchParams.get('type') || 'General';
+      const tipoBoletoIdParam = searchParams.get('tipoBoletoId') || '';
+
+      if (evento.seats_evento_key) {
+        setFlowStep('seats');
+        setSelectedSeats([]);
+        setHoldToken('');
+      } else {
+        let unit = Number(searchParams.get('price')) || Number(evento.precio_base) || 800;
+        let zoneName = typeParam;
+        const byId = evento.tipo_boleto?.find((t: { id: string }) => t.id === tipoBoletoIdParam);
+        const byName = evento.tipo_boleto?.find((t: { nombre: string }) => t.nombre === typeParam);
+        const matched = byId || byName;
+        if (matched) {
+          unit = Number(matched.precio);
+          zoneName = matched.nombre;
+        }
+        setFlowStep('checkout');
+        setSelectedSeats(
+          Array.from({ length: qtyParam }, (_, i) => ({
+            id: `ga-${eventId}-${i}`,
+            label: `${zoneName} · Boleto ${i + 1}`,
+            category: zoneName,
+            price: unit,
+          }))
+        );
+        setHoldToken('');
+      }
 
       setAuthChecked(true);
     }
 
     loadData();
-  }, [eventId, router]);
+  }, [eventId, router, searchParams]);
 
-  // Liberar asientos si el usuario cierra la página
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (holdToken && selectedSeats.length > 0 && seatsEventKey) {
-        navigator.sendBeacon('/api/seats/hold', JSON.stringify({
-          _method: 'DELETE',
-          eventKey: seatsEventKey,
-          seatIds: selectedSeats.map(s => s.id),
+      if (!usesSeatMap || !holdToken || selectedSeats.length === 0 || !resolvedSeatsEventKey) return;
+      fetch('/api/seats/hold', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          eventKey: resolvedSeatsEventKey,
+          seatIds: selectedSeats.map((s) => s.id),
           holdToken,
-        }));
-      }
+        }),
+      }).catch(() => {});
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [holdToken, selectedSeats, seatsEventKey]);
+  }, [holdToken, selectedSeats, resolvedSeatsEventKey, usesSeatMap]);
 
   const handleSeatsConfirmed = (seats: SelectedSeat[], token: string) => {
     setSelectedSeats(seats);
@@ -272,11 +333,11 @@ function CheckoutPageContent() {
     const newErrors = { name: '', email: '', phone: '' };
 
     if (!formData.name.trim()) { newErrors.name = 'El nombre es obligatorio'; valid = false; }
-    if (!formData.email.trim() || !/\S+@\S+\.\S+/.test(formData.email)) { 
-      newErrors.email = 'Correo electrónico inválido'; valid = false; 
+    if (!formData.email.trim() || !/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Correo electrónico inválido'; valid = false;
     }
-    if (!formData.phone.trim() || formData.phone.length < 10) { 
-      newErrors.phone = 'Teléfono de 10 dígitos requerido'; valid = false; 
+    if (!formData.phone.trim() || formData.phone.length < 10) {
+      newErrors.phone = 'Teléfono de 10 dígitos requerido'; valid = false;
     }
 
     setErrors(newErrors);
@@ -285,10 +346,13 @@ function CheckoutPageContent() {
 
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements || !holdToken) return;
+    if (!stripe || !elements) return;
+    if (usesSeatMap && !holdToken) return;
 
     setIsProcessing(true);
     setPaymentError('');
+
+    const seatIdsPayload = usesSeatMap ? selectedSeats.map((s) => s.id) : [];
 
     try {
       const res = await fetch('/api/checkout', {
@@ -296,16 +360,18 @@ function CheckoutPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventId,
-          type: selectedSeats[0]?.category || 'General',
+          type: selectedSeats[0]?.category || searchParams.get('type') || 'General',
           qty,
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
-          price: selectedSeats[0]?.price || 0,
           tipoBoletoId: searchParams.get('tipoBoletoId') || '',
-          seatIds: selectedSeats.map(s => s.id),
-          holdToken,
-          seatsEventKey,
+          seatIds: usesSeatMap ? seatIdsPayload : [],
+          seatDetails: usesSeatMap
+            ? selectedSeats.map((s) => ({ objectId: s.id, label: s.label, category: s.category }))
+            : [],
+          holdToken: usesSeatMap ? holdToken : '',
+          seatsEventKey: usesSeatMap ? resolvedSeatsEventKey : '',
         }),
       });
 
@@ -336,13 +402,13 @@ function CheckoutPageContent() {
   };
 
   const handleTimerExpire = async () => {
-    if (holdToken && selectedSeats.length > 0 && seatsEventKey) {
+    if (usesSeatMap && holdToken && selectedSeats.length > 0 && resolvedSeatsEventKey) {
       await fetch('/api/seats/hold', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          eventKey: seatsEventKey,
-          seatIds: selectedSeats.map(s => s.id),
+          eventKey: resolvedSeatsEventKey,
+          seatIds: selectedSeats.map((s) => s.id),
           holdToken,
         }),
       });
@@ -350,16 +416,31 @@ function CheckoutPageContent() {
     router.push('/');
   };
 
-  if (!authChecked) {
+  if (!authChecked || flowStep === null) {
     return <div className="min-h-screen bg-[#1a1625] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full" /></div>;
   }
 
-  // Paso 1: Selección de asientos
   if (flowStep === 'seats') {
+    if (!resolvedSeatsEventKey) {
+      return (
+        <div className="min-h-screen bg-[#1a1625] text-white flex flex-col items-center justify-center gap-4 px-6">
+          <p className="text-center text-gray-300">Este evento no tiene mapa de asientos configurado.</p>
+          <button
+            type="button"
+            onClick={() => router.push(`/evento/${eventId}`)}
+            className="text-pink-400 underline"
+          >
+            Volver al evento
+          </button>
+        </div>
+      );
+    }
     return (
       <SeatSelectionStep
         eventData={eventData}
-        seatsEventKey={seatsEventKey}
+        seatsEventKey={resolvedSeatsEventKey}
+        requiredQty={Math.max(1, Math.min(20, Number(searchParams.get('qty')) || 1))}
+        requiredType={searchParams.get('type') || 'General'}
         onSeatsConfirmed={handleSeatsConfirmed}
       />
     );
@@ -371,9 +452,10 @@ function CheckoutPageContent() {
       <Navbar user={null} />
       <div className="max-w-5xl mx-auto px-6 py-12">
         <div className="flex items-center gap-4 mb-10">
-          <button 
-            onClick={() => setFlowStep('seats')}
+          <button
+            onClick={() => (usesSeatMap ? setFlowStep('seats') : router.push(`/evento/${eventId}`))}
             className="p-3 rounded-full hover:bg-white/10 transition"
+            type="button"
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
@@ -421,7 +503,7 @@ function CheckoutPageContent() {
                       <input
                         type="tel"
                         value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0,10) })}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
                         className="w-full bg-black/30 border border-white/10 rounded-2xl p-4 focus:border-pink-500 outline-none"
                         placeholder="5512345678"
                         maxLength={10}
@@ -455,12 +537,12 @@ function CheckoutPageContent() {
 
                 <form onSubmit={handlePayment} className="space-y-8">
                   <div className="bg-black/40 border border-white/10 rounded-2xl p-6">
-                    <CardElement 
+                    <CardElement
                       options={{
                         style: {
                           base: { fontSize: '16px', color: '#fff', '::placeholder': { color: '#888' } }
                         }
-                      }} 
+                      }}
                     />
                   </div>
 
@@ -486,7 +568,7 @@ function CheckoutPageContent() {
           <div className="lg:col-span-1">
             <div className="bg-[#1e1a2f] border border-white/10 rounded-3xl p-8 sticky top-8">
               <h3 className="font-bold text-xl mb-6">Resumen de tu compra</h3>
-              
+
               <div className="space-y-4 text-sm">
                 {selectedSeats.map(seat => (
                   <div key={seat.id} className="flex justify-between">

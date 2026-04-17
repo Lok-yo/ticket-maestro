@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { updateEventSchema } from '@/lib/schemas/event.schema'
 import type { ApiResponse, Evento } from '@/types'
+import { VENUE_SEAT_STOCKS } from '@/lib/seatCategories'
+import { createSeatsIoEventForTicketEvent, getSeatsIoVenueChartKey } from '@/lib/seatsioServer'
 
 // PUT /api/events/[id] — Actualizar un evento existente
 export async function PUT(
@@ -35,7 +37,7 @@ export async function PUT(
     // 3. Verificar que el evento exista y sea PROPIEDAD de este usuario (A menos que sea admin)
     const { data: eventoOriginal, error: fetchError } = await supabase
        .from('evento')
-       .select('organizador_id')
+       .select('organizador_id, seats_evento_key, titulo, fecha')
        .eq('id', eventoId)
        .single();
 
@@ -64,8 +66,42 @@ export async function PUT(
       )
     }
 
-    // Solo tomamos los datos validados para hacer update (Parcial)
-    const { tipos_boleto, ...updatePayload } = validation.data;
+    const { tipos_boleto, usar_mapa_seats: usarMapaSeats, ...updatePayload } = validation.data
+
+    const alreadyHasSeatsMap = !!eventoOriginal.seats_evento_key
+    const enforceVenueStocks = alreadyHasSeatsMap || !!usarMapaSeats
+
+    if (usarMapaSeats && !alreadyHasSeatsMap) {
+      const secret = process.env.SEATS_IO_SECRET_KEY
+      const chartKey = getSeatsIoVenueChartKey()
+      if (!secret || !chartKey) {
+        return NextResponse.json<ApiResponse<null>>(
+          { error: 'Mapa de asientos no disponible: configura SEATS_IO_SECRET_KEY y SEATS_IO_VENUE_CHART_KEY en el servidor.' },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (tipos_boleto && tipos_boleto.length > 0) {
+      for (const t of tipos_boleto) {
+        if (t.precio < 50) {
+          return NextResponse.json<ApiResponse<null>>(
+            { error: `El precio para "${t.nombre}" debe ser de al menos $50 MXN.` },
+            { status: 400 }
+          )
+        }
+        const effectiveStock =
+          enforceVenueStocks && VENUE_SEAT_STOCKS[t.nombre] !== undefined
+            ? VENUE_SEAT_STOCKS[t.nombre]!
+            : t.stock_total
+        if (t.max_por_compra && t.max_por_compra > effectiveStock) {
+          return NextResponse.json<ApiResponse<null>>(
+            { error: `El límite máximo por compra para "${t.nombre}" no puede ser mayor que el stock total.` },
+            { status: 400 }
+          )
+        }
+      }
+    }
 
     // Calcular precio_base a partir del tipo más barato si hay tipos de boleto
     if (tipos_boleto && tipos_boleto.length > 0) {
@@ -100,23 +136,26 @@ export async function PUT(
         .eq('evento_id', eventoId);
 
       const tiposToInsert = tipos_boleto.map(tipo => {
-        // Buscar si existía un tipo con el mismo nombre para preservar stock vendido
-        const tipoExistente = tiposActuales?.find(t => t.nombre === tipo.nombre);
-        const vendidos = tipoExistente 
-          ? tipoExistente.stock_total - tipoExistente.stock_disponible 
-          : 0;
-        
+        const tipoExistente = tiposActuales?.find(t => t.nombre === tipo.nombre)
+        const vendidos = tipoExistente
+          ? tipoExistente.stock_total - tipoExistente.stock_disponible
+          : 0
+
+        const venueTotal =
+          enforceVenueStocks && VENUE_SEAT_STOCKS[tipo.nombre] !== undefined
+            ? VENUE_SEAT_STOCKS[tipo.nombre]!
+            : tipo.stock_total
+
         return {
           evento_id: eventoId,
           nombre: tipo.nombre,
           precio: tipo.precio,
-          stock_total: tipo.stock_total,
-          // Preservar los boletos ya vendidos: nuevo disponible = nuevo total - ya vendidos
-          stock_disponible: Math.max(0, tipo.stock_total - vendidos),
+          stock_total: venueTotal,
+          stock_disponible: Math.max(0, venueTotal - vendidos),
           descripcion: tipo.descripcion || null,
           max_por_compra: tipo.max_por_compra || 10,
-        };
-      });
+        }
+      })
 
       const { error: tiposError } = await supabase
         .from('tipo_boleto')
@@ -127,8 +166,41 @@ export async function PUT(
       }
     }
 
+    if (usarMapaSeats && !alreadyHasSeatsMap) {
+      const secret = process.env.SEATS_IO_SECRET_KEY!
+      const chartKey = getSeatsIoVenueChartKey()!
+      const tituloEvt = (updatePayload as { titulo?: string }).titulo ?? data.titulo
+      const fechaRaw = (updatePayload as { fecha?: string }).fecha ?? data.fecha
+      const fechaStr =
+        fechaRaw && !Number.isNaN(Date.parse(String(fechaRaw)))
+          ? new Date(String(fechaRaw)).toISOString().slice(0, 10)
+          : null
+      try {
+        await createSeatsIoEventForTicketEvent({
+          secretKey: secret,
+          chartKey,
+          eventKey: eventoId,
+          name: tituloEvt || eventoId,
+          date: fechaStr,
+        })
+        const { error: seatUpdErr } = await supabase
+          .from('evento')
+          .update({ seats_chart_key: chartKey, seats_evento_key: eventoId })
+          .eq('id', eventoId)
+        if (seatUpdErr) throw seatUpdErr
+      } catch (e: any) {
+        console.error('Error creando evento en seats.io (PUT):', e)
+        return NextResponse.json<ApiResponse<null>>(
+          { error: e?.message || 'No se pudo activar el mapa de asientos en seats.io.' },
+          { status: 502 }
+        )
+      }
+    }
+
+    const { data: dataOut } = await supabase.from('evento').select('*').eq('id', eventoId).single()
+
     return NextResponse.json<ApiResponse<Evento>>(
-      { data, message: 'Evento actualizado exitosamente' },
+      { data: (dataOut || data) as Evento, message: 'Evento actualizado exitosamente' },
       { status: 200 }
     )
   } catch (error: any) {
