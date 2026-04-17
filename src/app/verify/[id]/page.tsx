@@ -19,7 +19,11 @@ export default function VerifyTicketPage() {
   useEffect(() => {
     const fetchTicket = async () => {
       try {
-        const res = await fetch(`/api/verify/${ticketId}`);
+        const searchParams = new URLSearchParams(window.location.search);
+        const eventIdParam = searchParams.get('event');
+        const url = `/api/verify/${ticketId}${eventIdParam ? `?event=${eventIdParam}` : ''}`;
+        
+        const res = await fetch(url);
         const data = await res.json();
         
         if (!res.ok) {
@@ -42,7 +46,11 @@ export default function VerifyTicketPage() {
       setSuccessMsg('');
       
       try {
-        const res = await fetch(`/api/verify/${ticketId}`, { method: 'PUT' });
+        const searchParams = new URLSearchParams(window.location.search);
+        const eventIdParam = searchParams.get('event');
+        const url = `/api/verify/${ticketId}${eventIdParam ? `?event=${eventIdParam}` : ''}`;
+
+        const res = await fetch(url, { method: 'PUT' });
         const data = await res.json();
         
         if (!res.ok) {
@@ -80,7 +88,20 @@ export default function VerifyTicketPage() {
                     <ShieldAlert className="w-24 h-24 text-red-500 mx-auto mb-6"/>
                     <h2 className="text-2xl font-black text-red-400 mb-2">Acceso Denegado</h2>
                     <p className="text-gray-300 font-medium">{errorMsg}</p>
-                    <button onClick={() => window.history.back()} className="mt-8 px-6 py-2 bg-red-500/20 text-red-400 rounded-full font-bold hover:bg-red-500/30 transition">Volver</button>
+                    <button 
+                      onClick={() => {
+                        const searchParams = new URLSearchParams(window.location.search);
+                        const eventId = searchParams.get('event');
+                        if (eventId) {
+                          router.push(`/organizador/evento/${eventId}/acceso`);
+                        } else {
+                          router.push('/organizador');
+                        }
+                      }} 
+                      className="mt-8 px-6 py-2 bg-red-500/20 text-red-400 rounded-full font-bold hover:bg-red-500/30 transition"
+                    >
+                      Volver
+                    </button>
                 </div>
             ) : ticketData ? (
                 <div className="relative">

@@ -9,15 +9,14 @@ interface ExportCSVButtonProps {
 
 export default function ExportCSVButton({ eventoId, validaciones }: ExportCSVButtonProps) {
   const exportToCSV = () => {
-    const headers = ['Fecha/Hora', 'Boleto ID', 'Tipo', 'Resultado', 'Motivo', 'IP', 'Escaneado por']
+    const headers = ['Fecha/Hora', 'Boleto ID', 'Tipo', 'Resultado', 'Comprador', 'Nombre del Staff']
     const rows = validaciones.map(v => [
-      new Date(v.fecha_hora).toISOString(),
+      new Date(v.fecha_hora).toLocaleString('es-MX'),
       v.boleto_id,
       v.boleto?.tipo || 'General',
       v.resultado,
-      v.motivo || '',
-      v.ip_dispositivo || '',
-      v.escaneado_por
+      v.boleto?.orden?.usuario?.nombre || 'N/A',
+      v.staff?.nombre || 'Sistema'
     ])
 
     const csvContent = [headers, ...rows]

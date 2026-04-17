@@ -69,13 +69,13 @@ export default function AccessDashboard({ eventoId, evento }: AccessDashboardPro
     if (!manualId.trim()) return
 
     const ticketId = manualId.trim().toUpperCase()
-    window.location.href = `/verify/${ticketId}`
+    window.location.href = `/verify/${ticketId}?event=${eventoId}`
     setManualId('')
     setShowManualInput(false)
   }
 
   const handleQRScan = (ticketId: string) => {
-    window.location.href = `/verify/${ticketId}`
+    window.location.href = `/verify/${ticketId}?event=${eventoId}`
   }
 
   const formatDate = (dateString: string) => {
@@ -220,9 +220,9 @@ export default function AccessDashboard({ eventoId, evento }: AccessDashboardPro
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-red-400">
-                      {stats.resumen_validaciones.ya_usados}
+                      {(stats.resumen_validaciones.invalidos || 0) + (stats.resumen_validaciones.ya_usados || 0)}
                     </p>
-                    <p className="text-xs text-gray-400">Ya usados</p>
+                    <p className="text-xs text-gray-400">Rechazados</p>
                   </div>
                 </div>
               </div>

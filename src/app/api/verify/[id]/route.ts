@@ -5,6 +5,9 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: ticketId } = await params;
+    const { searchParams } = new URL(request.url);
+    const eventIdParam = searchParams.get('event');
+    
     const supabaseUsuario = await createClient();
 
     // 1. Verificar Sesión de quien escanea
@@ -46,6 +49,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const boleto = boletoRaw as any;
 
     if (error || !boleto) {
+        // Log failed attempt if we have the event context
+        if (eventIdParam) {
+          await supabaseAdmin.from('validacion').insert({
+            boleto_id: null, // No podemos poner un ID que no existe si hay FK
+            codigo_escaneado: ticketId,
+            escaneado_por: user.id,
+            resultado: 'invalido',
+            motivo: 'Código no existe o es de otro evento',
+            evento_id: eventIdParam
+          });
+        }
         return NextResponse.json({ error: 'Boleto Inexistente o Falso.' }, { status: 404 });
     }
 
@@ -77,6 +91,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: ticketId } = await params;
+    const { searchParams } = new URL(request.url);
+    const eventIdParam = searchParams.get('event');
+
     const supabaseUsuario = await createClient();
 
     const { data: { user } } = await supabaseUsuario.auth.getUser();
@@ -94,7 +111,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { data: checkBoletoRaw } = await supabaseAdmin.from('boleto').select('estado, evento_id, evento(organizador_id)').eq('id', ticketId).single();
     const checkBoleto = checkBoletoRaw as any;
     
-    if (!checkBoleto) return NextResponse.json({ error: 'Boleto Inexistente' }, { status: 404 });
+    if (!checkBoleto) {
+      if (eventIdParam) {
+        await supabaseAdmin.from('validacion').insert({
+          boleto_id: null,
+          codigo_escaneado: ticketId,
+          escaneado_por: user.id,
+          resultado: 'invalido',
+          evento_id: eventIdParam
+        });
+      }
+      return NextResponse.json({ error: 'Boleto Inexistente' }, { status: 404 });
+    }
 
     // Permisos
     const isAdmin = usuarioDb.rol === 'admin';
@@ -117,9 +145,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
        // Log failed attempt
        await supabaseAdmin.from('validacion').insert({
          boleto_id: ticketId,
+         codigo_escaneado: ticketId,
          escaneado_por: user.id,
          resultado: 'ya_usado',
-         motivo: 'El boleto ya había sido escaneado'
+         motivo: 'El boleto ya había sido escaneado',
+         evento_id: eventIdParam || checkBoleto.evento_id
        });
        return NextResponse.json({ error: 'Boleto YA FUE USADO.' }, { status: 400 });
     }
@@ -136,8 +166,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // Registrar en 'validacion' para el reporte
     await supabaseAdmin.from('validacion').insert({
       boleto_id: ticketId,
+      codigo_escaneado: ticketId,
       escaneado_por: user.id,
-      resultado: 'valido'
+      resultado: 'valido',
+      evento_id: eventIdParam || checkBoleto.evento_id
     });
 
     return NextResponse.json({ success: true, estado: updatedBoleto.estado });

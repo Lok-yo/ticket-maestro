@@ -180,8 +180,8 @@ export default async function ReportePage({ params }: PageProps) {
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Boleto</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Tipo</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Resultado</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Comprador</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">Escaneado por</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-400">IP</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -217,11 +217,11 @@ export default async function ReportePage({ params }: PageProps) {
                           {v.resultado}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-400">
-                        {v.escaneado_por?.substring(0, 8)}...
+                      <td className="px-4 py-3 text-sm text-gray-300">
+                        {v.boleto?.orden?.usuario?.nombre || 'N/A'}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-500 font-mono">
-                        {v.ip_dispositivo || '-'}
+                      <td className="px-4 py-3 text-sm text-gray-400">
+                        {v.staff?.nombre || 'Sistema'}
                       </td>
                     </tr>
                   ))
@@ -331,30 +331,66 @@ async function fetchValidaciones(eventoId: string) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    const { data: validaciones } = await supabaseAdmin
-      .from('validacion')
-      .select(`
-        id,
-        boleto_id,
-        resultado,
-        motivo,
-        ip_dispositivo,
-        fecha_hora,
-        escaneado_por,
-        boleto (
-          tipo
-        )
-      `)
-      .in('boleto_id',
-        (await supabaseAdmin.from('boleto').select('id').eq('evento_id', eventoId)).data?.map(b => b.id) || []
-      )
-      .order('fecha_hora', { ascending: false })
-      .limit(100)
+    // 1. Obtener IDs de boletos del evento
+    const { data: boletosEvento } = await supabaseAdmin
+      .from('boleto')
+      .select('id, orden_id, tipo')
+      .eq('evento_id', eventoId);
+    
+    const boletoIds = boletosEvento?.map(b => b.id) || [];
+    if (boletoIds.length === 0) return { data: [] };
 
-    return { data: validaciones || [] }
+    // 2. Obtener validaciones básicas por evento_id
+    const { data: rawValidaciones } = await supabaseAdmin
+      .from('validacion')
+      .select('id, boleto_id, resultado, motivo, ip_dispositivo, fecha_hora, escaneado_por')
+      .eq('evento_id', eventoId)
+      .order('fecha_hora', { ascending: false })
+      .limit(100);
+
+    if (!rawValidaciones) return { data: [] };
+
+    // 3. Obtener nombres de staff
+    const staffIds = Array.from(new Set(rawValidaciones.map(v => v.escaneado_por).filter(id => !!id)));
+    const { data: staffData } = await supabaseAdmin
+      .from('usuario')
+      .select('id, nombre')
+      .in('id', staffIds);
+
+    // 4. Obtener información de las órdenes (compradores)
+    const ordenIds = Array.from(new Set(boletosEvento.map(b => b.orden_id).filter(id => !!id)));
+    const { data: ordenesData } = await supabaseAdmin
+      .from('orden')
+      .select('id, usuario_id')
+      .in('id', ordenIds);
+    
+    const usuarioIds = Array.from(new Set(ordenesData?.map(o => o.usuario_id).filter(id => !!id) || []));
+    const { data: usuariosData } = await supabaseAdmin
+      .from('usuario')
+      .select('id, nombre')
+      .in('id', usuarioIds);
+
+    // 5. Mapear todo manualmente
+    const validaciones = rawValidaciones.map(v => {
+      const staff = staffData?.find(s => s.id === v.escaneado_por);
+      const boletoInfo = boletosEvento.find(b => b.id === v.boleto_id);
+      const orden = ordenesData?.find(o => o.id === boletoInfo?.orden_id);
+      const comprador = usuariosData?.find(u => u.id === orden?.usuario_id);
+      
+      return {
+        ...v,
+        staff: staff ? { nombre: staff.nombre } : null,
+        boleto: {
+          tipo: boletoInfo?.tipo || 'General',
+          orden: comprador ? { usuario: { nombre: comprador.nombre } } : null
+        }
+      };
+    });
+
+    return { data: validaciones };
   } catch (error) {
-    console.error('Error fetching validaciones:', error)
-    return { data: [] }
+    console.error('Error fetching validaciones:', error);
+    return { data: [] };
   }
 }
 

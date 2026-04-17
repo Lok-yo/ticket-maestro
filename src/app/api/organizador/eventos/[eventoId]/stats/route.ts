@@ -41,13 +41,13 @@ export async function GET(
     const boletoIds = boletos.map(b => b.id);
     let validaciones: any[] = [];
     
-    if (boletoIds.length > 0) {
-      const { data: valData } = await supabaseAdmin
-        .from('validacion')
-        .select('resultado, fecha_hora, boleto_id')
-        .in('boleto_id', boletoIds);
-      validaciones = valData || [];
-    }
+    // Ahora consultamos directamente por evento_id para atrapar incluso los intentos inválidos
+    const { data: valData } = await supabaseAdmin
+      .from('validacion')
+      .select('resultado, fecha_hora, boleto_id')
+      .eq('evento_id', eventoId);
+    
+    validaciones = valData || [];
 
     let ultimosIngresos: any[] = [];
     if (boletoIds.length > 0) {
