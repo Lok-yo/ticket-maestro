@@ -3,33 +3,87 @@ import { createClient } from '@/lib/supabase/server'
 import { generateQRPayload } from '@/lib/utils/generateSecureQR'
 import { verifyStripeWebhook } from '@/lib/stripe'
 
-// POST /api/webhooks/stripe — confirma pagos y genera QR
+const REGION = 'na'; // Región que estás usando
+
+// Helper para confirmar asientos como vendidos en seats.io
+async function bookSeatsInSeatsIo(seatIds: string[], holdToken: string, seatsEventKey: string) {
+  if (!seatIds?.length || !holdToken || !seatsEventKey) return;
+
+  const secretKey = process.env.SEATS_IO_SECRET_KEY;
+  if (!secretKey) {
+    console.warn('SEATS_IO_SECRET_KEY no configurada en webhook');
+    return;
+  }
+
+  const auth = 'Basic ' + Buffer.from(secretKey + ':').toString('base64');
+
+  try {
+    const bookRes = await fetch(`https://api-${REGION}.seatsio.net/events/${seatsEventKey}/actions/book`, {
+      method: 'POST',
+      headers: {
+        'Authorization': auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        objects: seatIds, 
+        holdToken 
+      }),
+    });
+
+    if (bookRes.ok) {
+      console.log(`✓ Asientos confirmados como vendidos en seats.io: ${seatIds.join(', ')}`);
+    } else {
+      const err = await bookRes.text();
+      console.error('Error al book seats en seats.io:', err);
+    }
+  } catch (err) {
+    console.error('Error en llamada a seats.io (book):', err);
+  }
+}
+
+// Helper para liberar asientos en caso de fallo
+async function releaseSeatsInSeatsIo(seatIds: string[], holdToken: string, seatsEventKey: string) {
+  if (!seatIds?.length || !holdToken || !seatsEventKey) return;
+
+  const secretKey = process.env.SEATS_IO_SECRET_KEY;
+  if (!secretKey) return;
+
+  const auth = 'Basic ' + Buffer.from(secretKey + ':').toString('base64');
+
+  try {
+    await fetch(`https://api-${REGION}.seatsio.net/events/${seatsEventKey}/actions/release`, {
+      method: 'POST',
+      headers: {
+        'Authorization': auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        objects: seatIds, 
+        holdToken 
+      }),
+    });
+    console.log(`↩ Asientos liberados en seats.io: ${seatIds.join(', ')}`);
+  } catch (err) {
+    console.error('Error liberando asientos en seats.io:', err);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text()
     const signature = request.headers.get('stripe-signature')
 
-    // Verificar que viene de Stripe
     if (!signature) {
-      return NextResponse.json(
-        { error: 'Firma de Stripe requerida' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Firma de Stripe requerida' }, { status: 400 });
     }
 
-    // Cuando tengamos las keys de Stripe verificamos la firma
-    // Por ahora parseamos el body directo para desarrollo
     let event: any
     try {
       event = verifyStripeWebhook(body, signature)
     } catch (err) {
       console.error('Firma de Stripe inválida:', err)
-      return NextResponse.json(
-        { error: 'Webhook inválido' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Webhook inválido' }, { status: 400 });
     }
-
 
     const supabase = await createClient()
 
@@ -44,6 +98,20 @@ export async function POST(request: NextRequest) {
           break
         }
 
+        // === NUEVO: EXTRAER DATOS DE SEATS.IO DEL METADATA ===
+        const seatIdsRaw = paymentIntent.metadata?.seat_ids;
+        const holdToken = paymentIntent.metadata?.hold_token;
+        const seatsEventKey = paymentIntent.metadata?.seats_event_key;
+        let seatIds: string[] = [];
+
+        if (seatIdsRaw) {
+          try {
+            seatIds = JSON.parse(seatIdsRaw);
+          } catch (e) {
+            console.error('Error parseando seat_ids:', e);
+          }
+        }
+
         // Actualizar estado del pago
         const { error: pagoError } = await supabase
           .from('pago')
@@ -55,7 +123,6 @@ export async function POST(request: NextRequest) {
 
         if (pagoError) {
           console.error('Error actualizando pago:', pagoError)
-          break
         }
 
         // Actualizar estado de la orden
@@ -64,27 +131,40 @@ export async function POST(request: NextRequest) {
           .update({ estado: 'pagada' })
           .eq('id', ordenId)
 
-        // Obtener boletos de la orden para generar QR y saber el organizador
+        // Obtener boletos de la orden
         const { data: orden, error: ordenErr } = await supabase
           .from('orden')
           .select('*, boleto(*, evento(*))')
           .eq('id', ordenId)
           .single()
 
-        if (ordenErr) console.error('Error al obtener orden anidada:', ordenErr)
+        if (ordenErr) console.error('Error al obtener orden:', ordenErr)
         if (!orden?.boleto || orden.boleto.length === 0) {
-            console.error('Orden no tiene boletos. Saliendo de webhook balance.')
-            break
+          console.error('Orden no tiene boletos.')
+          break
         }
 
-        // Acceder a las relaciones de Supabase considerando que pueden venir como objetos o arrays
         const primerBoleto = orden.boleto[0];
-        const eventoDelBoleto = Array.isArray(primerBoleto.evento) ? primerBoleto.evento[0] : primerBoleto.evento;
+        const eventoDelBoleto = Array.isArray(primerBoleto.evento) 
+          ? primerBoleto.evento[0] 
+          : primerBoleto.evento;
         const organizadorId = eventoDelBoleto?.organizador_id;
-        
-        console.log("-> Organizador ID extraído:", organizadorId);
 
-        // Calcular monto retenido total en base a los boletos 
+        // === NUEVO: CONFIRMAR ASIENTOS EN SEATS.IO ===
+        if (seatIds.length > 0 && holdToken && seatsEventKey) {
+          await bookSeatsInSeatsIo(seatIds, holdToken, seatsEventKey);
+
+          // Actualizar tabla asiento en Supabase
+          await supabase
+            .from('asiento')
+            .update({ 
+              estado: 'vendido', 
+              hold_token: null 
+            })
+            .in('seats_object_id', seatIds);
+        }
+
+        // Calcular monto retenido y actualizar balance del organizador (tu lógica original)
         const { data: pagoRegistrado } = await supabase
           .from('pago')
           .select('monto_retenido')
@@ -92,36 +172,30 @@ export async function POST(request: NextRequest) {
           .single();
           
         const montoRetenido = pagoRegistrado?.monto_retenido || 0;
-        console.log("-> Monto Retenido: ", montoRetenido);
 
-        // Sumar al Organizador
         if (organizadorId && montoRetenido > 0) {
-            const { data: balanceActual } = await supabase
-               .from('balance_organizador')
-               .select('*')
-               .eq('organizador_id', organizadorId)
-               .single();
+          const { data: balanceActual } = await supabase
+            .from('balance_organizador')
+            .select('*')
+            .eq('organizador_id', organizadorId)
+            .single();
 
-            if (balanceActual) {
-               const { error: updErr } = await supabase.from('balance_organizador').update({
-                  saldo_disponible: Number(balanceActual.saldo_disponible) + Number(montoRetenido),
-                  total_ganado: Number(balanceActual.total_ganado) + Number(montoRetenido),
-                  ultima_actualizacion: new Date().toISOString()
-               }).eq('organizador_id', organizadorId);
-               if (updErr) console.error("Error al actualizar balance:", updErr);
-               else console.log("Balance ACTUALIZADO exitosamente.")
-            } else {
-               const { error: insErr } = await supabase.from('balance_organizador').insert({
-                  organizador_id: organizadorId,
-                  saldo_disponible: Number(montoRetenido),
-                  total_ganado: Number(montoRetenido)
-               });
-               if (insErr) console.error("Error al insertar balance:", insErr);
-               else console.log("Balance INSERTADO exitosamente.")
-            }
+          if (balanceActual) {
+            await supabase.from('balance_organizador').update({
+              saldo_disponible: Number(balanceActual.saldo_disponible) + Number(montoRetenido),
+              total_ganado: Number(balanceActual.total_ganado) + Number(montoRetenido),
+              ultima_actualizacion: new Date().toISOString()
+            }).eq('organizador_id', organizadorId);
+          } else {
+            await supabase.from('balance_organizador').insert({
+              organizador_id: organizadorId,
+              saldo_disponible: Number(montoRetenido),
+              total_ganado: Number(montoRetenido)
+            });
+          }
         }
 
-        // Generar QR seguro para cada boleto y confirmarlos
+        // Generar QR y marcar boletos como vendidos (tu lógica original)
         for (const boleto of orden.boleto) {
           const qrPayload = generateQRPayload(
             boleto.id,
@@ -140,22 +214,6 @@ export async function POST(request: NextRequest) {
             .eq('id', boleto.id)
         }
 
-        // Registrar en audit log, este segmento lo meti de mejora, seria crear otra tabla en la BD y esto nos ayudaria en un futuro para
-        // registrar todo lo que pasa en el sistema quién validó qué boleto, cuándo se procesó un pago, si hubo intentos de fraude. 
-        // Si en el futuro hay una disputa con un cliente puedes decir exactamente qué pasó y cuándo, o almenos asi me aconsejo una IA
-        /*await supabase
-          .from('audit_logs')
-          .insert({
-            usuario_id: orden.usuario_id,
-            accion: 'payment_completed',
-            detalle: {
-              orden_id: ordenId,
-              referencia: paymentIntent.id,
-              monto: paymentIntent.amount / 100,
-              fecha: new Date().toISOString(),
-            },
-          })*/
-
         console.log(`✓ Pago completado para orden ${ordenId}`)
         break
       }
@@ -166,6 +224,24 @@ export async function POST(request: NextRequest) {
         const ordenId = paymentIntent.metadata?.orden_id
         const tipoBoletoId = paymentIntent.metadata?.tipo_boleto_id
         const cantidad = parseInt(paymentIntent.metadata?.cantidad || '0', 10)
+
+        // === NUEVO: LIBERAR ASIENTOS EN SEATS.IO ===
+        const seatIdsRaw = paymentIntent.metadata?.seat_ids;
+        const holdToken = paymentIntent.metadata?.hold_token;
+        const seatsEventKey = paymentIntent.metadata?.seats_event_key;
+
+        let seatIds: string[] = [];
+        if (seatIdsRaw) {
+          try {
+            seatIds = JSON.parse(seatIdsRaw);
+          } catch (e) {
+            console.error('Error parseando seat_ids:', e);
+          }
+        }
+
+        if (seatIds.length > 0 && holdToken && seatsEventKey) {
+          await releaseSeatsInSeatsIo(seatIds, holdToken, seatsEventKey);
+        }
 
         if (!ordenId) break
 
@@ -181,7 +257,7 @@ export async function POST(request: NextRequest) {
           .update({ estado: 'cancelada' })
           .eq('id', ordenId)
 
-        // Liberar boletos para que otros puedan comprarlos
+        // Liberar boletos
         await supabase
           .from('boleto')
           .update({ estado: 'disponible' })
@@ -201,7 +277,6 @@ export async function POST(request: NextRequest) {
               .from('tipo_boleto')
               .update({ stock_disponible: tipoBoleto.stock_disponible + cantidad })
               .eq('id', tipoBoletoId);
-            console.log(`↩ Stock restaurado: +${cantidad} para tipo_boleto ${tipoBoletoId}`);
           }
         }
 
@@ -209,7 +284,7 @@ export async function POST(request: NextRequest) {
         break
       }
 
-      // Reembolso procesado
+      // Reembolso procesado (mantenemos tu lógica)
       case 'charge.refunded': {
         const charge = event.data.object
         const ordenId = charge.metadata?.orden_id
@@ -223,7 +298,6 @@ export async function POST(request: NextRequest) {
           .update({ estado: 'fallido' })
           .eq('orden_id', ordenId)
 
-        // Obtener boletos de la orden para restaurarlos
         const { data: boletosOrden } = await supabase
           .from('boleto')
           .select('id')
@@ -237,7 +311,6 @@ export async function POST(request: NextRequest) {
             .in('id', boletosOrden.map(b => b.id));
         }
 
-        // Restaurar stock del tipo de boleto en reembolso
         if (tipoBoletoId && cantidad > 0) {
           const { data: tipoBoleto } = await supabase
             .from('tipo_boleto')
@@ -250,7 +323,6 @@ export async function POST(request: NextRequest) {
               .from('tipo_boleto')
               .update({ stock_disponible: tipoBoleto.stock_disponible + cantidad })
               .eq('id', tipoBoletoId);
-            console.log(`↩ Stock restaurado por reembolso: +${cantidad} para tipo_boleto ${tipoBoletoId}`);
           }
         }
 
@@ -265,9 +337,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   } catch (error) {
     console.error('Error en webhook:', error)
-    return NextResponse.json(
-      { error: 'Error interno en webhook' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Error interno en webhook' }, { status: 500 })
   }
 }
