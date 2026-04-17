@@ -358,7 +358,7 @@ async function fetchValidaciones(eventoId: string) {
       .in('id', staffIds);
 
     // 4. Obtener información de las órdenes (compradores)
-    const ordenIds = Array.from(new Set(boletosEvento.map(b => b.orden_id).filter(id => !!id)));
+    const ordenIds = Array.from(new Set((boletosEvento || []).map(b => b.orden_id).filter(id => !!id)));
     const { data: ordenesData } = await supabaseAdmin
       .from('orden')
       .select('id, usuario_id')
@@ -373,7 +373,7 @@ async function fetchValidaciones(eventoId: string) {
     // 5. Mapear todo manualmente
     const validaciones = rawValidaciones.map(v => {
       const staff = staffData?.find(s => s.id === v.escaneado_por);
-      const boletoInfo = boletosEvento.find(b => b.id === v.boleto_id);
+      const boletoInfo = (boletosEvento || []).find(b => b.id === v.boleto_id);
       const orden = ordenesData?.find(o => o.id === boletoInfo?.orden_id);
       const comprador = usuariosData?.find(u => u.id === orden?.usuario_id);
       
