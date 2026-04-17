@@ -31,7 +31,6 @@ export default function EventDetailPage() {
     const fetchEvent = async () => {
       const supabase = createClient();
       try {
-          // Fetch evento con sus tipos de boleto
           const { data, error } = await supabase
             .from('evento')
             .select('*, tipo_boleto(*)')
@@ -41,7 +40,6 @@ export default function EventDetailPage() {
           if (data && !error) {
               setEventData(data);
               
-              // Usar tipos de boleto reales de la BD si existen
               if (data.tipo_boleto && data.tipo_boleto.length > 0) {
                 const tipos = data.tipo_boleto.map((t: TipoBoleto) => ({
                   id: t.id,
@@ -56,7 +54,6 @@ export default function EventDetailPage() {
                 setTicketTypes(tipos);
                 setSelectedType(tipos[0]);
               } else {
-                // Fallback para eventos creados antes del nuevo sistema
                 const fallback = getTicketTypesFallback(data.precio_base || 800, data.capacidad || 1000);
                 setTicketTypes(fallback);
                 setSelectedType(fallback[0]);
@@ -73,15 +70,20 @@ export default function EventDetailPage() {
     fetchEvent();
   }, [eventId, router]);
 
+  // === FUNCIÓN ACTUALIZADA CON SEATS.IO ===
   const handleBuy = () => {
     if (!selectedType || selectedType.stock_disponible <= 0) return;
+
     const searchParams = new URLSearchParams({
       type: selectedType.nombre,
       price: selectedType.precio.toString(),
       qty: quantity.toString(),
-      eventTitle: eventData?.titulo,
+      eventTitle: eventData?.titulo || '',
       tipoBoletoId: selectedType.isFallback === false ? selectedType.id : '',
+      // NUEVO: Pasamos la clave del evento en seats.io
+      seatsEventKey: eventData?.seats_evento_key || process.env.NEXT_PUBLIC_SEATS_IO_CHART_KEY || '',
     });
+
     router.push(`/checkout/${eventId}?${searchParams.toString()}`);
   };
 
@@ -185,7 +187,6 @@ export default function EventDetailPage() {
                          <span className="text-xs text-green-400 font-bold">{type.stock_disponible} disponibles</span>
                        )}
                      </div>
-                     {/* Barra de progreso */}
                      <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
                        <div 
                          className={`h-full rounded-full transition-all ${
