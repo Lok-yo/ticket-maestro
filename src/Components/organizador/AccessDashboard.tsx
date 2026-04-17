@@ -229,7 +229,13 @@ export default function AccessDashboard({ eventoId, evento }: AccessDashboardPro
             </div>
 
             <RecentEntries
-              entries={stats.ultimos_ingresos}
+              entries={stats.ultimos_ingresos.map(v => ({
+                boleto_id: v.boleto_id,
+                comprador: 'Boleto #' + v.boleto_id.split('-')[1],
+                tipo: v.boleto?.tipo || 'General',
+                hora: new Date(v.fecha_hora).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+                resultado: v.resultado as 'valido' | 'ya_usado' | 'invalido'
+              }))}
               loading={loading}
               onRefresh={fetchStats}
               lastUpdate={lastUpdate}
