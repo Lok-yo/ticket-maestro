@@ -2,10 +2,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import Stripe from 'stripe';
 
-// Se instancia Stripe con llave dummy para evitar petar si no ha sido configurado en el .env.local
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
   apiVersion: '2025-02-24.acacia' as any,
 });
+
+// Helper para hacer hold en seats.io (solo por seguridad, aunque ya lo hacemos en /api/seats/hold)
+async function holdSeatsInSeatsIo(
+  eventKey: string,
+  seatIds: string[],
+  holdToken: string,
+  secretKey: string
+) {
+  const REGION = 'na';
+  const auth = 'Basic ' + Buffer.from(secretKey + ':').toString('base64');
+
+  const res = await fetch(`https://api-${REGION}.seatsio.net/events/${eventKey}/actions/hold`, {
+    method: 'POST',
+    headers: {
+      'Authorization': auth,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ objects: seatIds, holdToken }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`seats.io hold error: ${err}`);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,10 +42,37 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { eventId, type, qty, name, email, phone, price, tipoBoletoId } = body;
+    
+    // === DESTRUCTURING ACTUALIZADO CON CAMPOS DE SEATS.IO ===
+    const { 
+      eventId, 
+      type, 
+      qty, 
+      name, 
+      email, 
+      phone, 
+      price, 
+      tipoBoletoId,
+      // NUEVOS CAMPOS PARA SEATS.IO
+      seatIds = [],           // Ej: ["A-101", "A-102"]
+      holdToken = '',         // Token de reserva temporal
+      seatsEventKey = ''      // Key del evento en seats.io
+    } = body;
 
     if (!eventId || !qty || qty <= 0 || !price) {
       return NextResponse.json({ error: 'Faltan datos requeridos (evento, cantidad, precio).' }, { status: 400 });
+    }
+
+    // === NUEVA VALIDACIÓN PARA SEATS.IO ===
+    const seatsSecretKey = process.env.SEATS_IO_SECRET_KEY;
+    const usingSeatsIo = seatIds?.length > 0 && holdToken && seatsEventKey && seatsSecretKey;
+
+    if (usingSeatsIo) {
+      if (seatIds.length !== qty) {
+        return NextResponse.json({ 
+          error: `Seleccionaste ${seatIds.length} asiento(s) pero indicaste ${qty} boleto(s).` 
+        }, { status: 400 });
+      }
     }
 
     // 1. Obtener Evento de DB para validar
@@ -37,7 +88,6 @@ export async function POST(req: NextRequest) {
 
     // 2. Validar stock del tipo de boleto seleccionado
     if (tipoBoletoId) {
-      // Nuevo flujo: validar contra tipo_boleto
       const { data: tipoBoleto, error: tipoError } = await supabase
         .from('tipo_boleto')
         .select('*')
@@ -55,7 +105,6 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
 
-      // Validar que el precio coincida con el configurado (seguridad anti-manipulación)
       const precioReal = parseFloat(tipoBoleto.precio);
       const precioEnviado = parseFloat(price);
       if (Math.abs(precioReal - precioEnviado) > 0.01) {
@@ -64,18 +113,18 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
 
-      // Decrementar stock del tipo de boleto
+      // Decrementar stock
       const { error: stockError } = await supabase
         .from('tipo_boleto')
         .update({ stock_disponible: tipoBoleto.stock_disponible - qty })
         .eq('id', tipoBoletoId)
-        .eq('stock_disponible', tipoBoleto.stock_disponible); // Optimistic locking
+        .eq('stock_disponible', tipoBoleto.stock_disponible);
 
       if (stockError) {
         return NextResponse.json({ error: 'Error al reservar boletos. Intenta de nuevo.' }, { status: 500 });
       }
     } else {
-      // Flujo legacy: validar contra capacidad global (para eventos sin tipo_boleto)
+      // Flujo legacy...
       const { count: boletosVendidos, error: countError } = await supabase
         .from('boleto')
         .select('*', { count: 'exact', head: true })
@@ -95,19 +144,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Usamos el precio real del boleto (determinado dinámicamente)
     const basePrice = parseFloat(price); 
     const subtotal = basePrice * qty;
-    const cargoServicio = subtotal * 0.10; // 10%
+    const cargoServicio = subtotal * 0.10;
     const total = subtotal + cargoServicio;
 
-    // Calcular desglose real (Para el paso 6 del diagrama: Cálculo comisión plataforma vs neto)
     const comisionPlataforma = cargoServicio; 
     const netoOrganizador = subtotal; 
 
     const ordenId = `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-    // 2. Crear la Orden (Paso 4: Orden Pending)
+    // Crear la Orden
     const { data: orden, error: ordenError } = await supabase
       .from('orden')
       .insert({
@@ -123,9 +170,7 @@ export async function POST(req: NextRequest) {
 
     if (ordenError || !orden) {
       console.error('Error insertando orden:', ordenError);
-      // Si falla la orden, restaurar stock
       if (tipoBoletoId) {
-        // Restaurar stock directamente
         const { data: tipoData } = await supabase.from('tipo_boleto').select('stock_disponible').eq('id', tipoBoletoId).single();
         if (tipoData) {
           await supabase.from('tipo_boleto').update({ stock_disponible: tipoData.stock_disponible + qty }).eq('id', tipoBoletoId);
@@ -134,40 +179,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No se pudo generar la orden temporal.' }, { status: 500 });
     }
 
+    // Crear pago en espera
     const pagoId = `PAG-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    // 3. Crear el Pago en estado en_espera
     const { error: pagoError } = await supabase
       .from('pago')
       .insert({
-         id: pagoId,
-         orden_id: orden.id,
-         metodo: 'tarjeta',
-         estado: 'en_espera',
-         referencia: '',
-         monto: total,
-         cargo_servicio: cargoServicio,
-         comision_organizadora: 0,
-         monto_neto: total,
-         monto_retenido: netoOrganizador,
-         estado_escrow: 'retenido'
+        id: pagoId,
+        orden_id: orden.id,
+        metodo: 'tarjeta',
+        estado: 'en_espera',
+        referencia: '',
+        monto: total,
+        cargo_servicio: cargoServicio,
+        comision_organizadora: 0,
+        monto_neto: total,
+        monto_retenido: netoOrganizador,
+        estado_escrow: 'retenido'
       });
       
     if (pagoError) {
-      console.warn('Advertencia DB: No se pudo registrar el pago inicial (puede faltar la tabla pago o columnas).', pagoError);
+      console.warn('Advertencia DB: No se pudo registrar el pago inicial.', pagoError);
     }
 
-    // 4. Crear los boletos temporales para reservar cupo (Paso 3 y 5 parciales)
-    const boletosToInsert = Array.from({ length: qty }).map(() => {
-       const bolId = `BOL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-       return {
-           id: bolId,
-           evento_id: eventId,
-           orden_id: orden.id, // Según webhook (boleto->orden)
-           precio: basePrice * 1.10,
-           tipo: type,
-           estado: 'reservado', 
-           codigo_qr: `PENDIENTE-${bolId}`, // String único temporal para esquivar el UNIQUE constraint
-       };
+    // === BOLETOS CON SOPORTE PARA ASIENTOS ===
+    const boletosToInsert = Array.from({ length: qty }).map((_, index) => {
+      const bolId = `BOL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      return {
+        id: bolId,
+        evento_id: eventId,
+        orden_id: orden.id,
+        precio: basePrice * 1.10,
+        tipo: type,
+        estado: 'reservado', 
+        codigo_qr: `PENDIENTE-${bolId}`,
+        // NUEVO: Guardar asiento si viene de seats.io
+        asiento_id: usingSeatsIo && seatIds[index] ? seatIds[index] : null,
+      };
     });
 
     const { error: boletosError } = await supabase
@@ -175,20 +222,19 @@ export async function POST(req: NextRequest) {
       .insert(boletosToInsert);
 
     if (boletosError) {
-       console.warn('Advertencia DB: No se insertaron boletos (puede faltar tabla boleto o col orden_id).', boletosError);
+      console.warn('Advertencia DB: No se insertaron boletos.', boletosError);
     }
 
-    // 5. Crear PaymentIntent en Stripe (Paso 7 del Diagrama)
+    // 5. Crear PaymentIntent en Stripe
     if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'sk_test_dummy') {
-        // Enviar respuesta clara al frontend para informar que faltan keys.
-        return NextResponse.json({ 
-            error: 'Falta configurar STRIPE_SECRET_KEY en el backend para cobrar con Stripe real. Agrega tu secret key en .env.local para continuar.',
-            orden_id: orden.id,
-        }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'Falta configurar STRIPE_SECRET_KEY en el backend.',
+        orden_id: orden.id,
+      }, { status: 400 });
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(total * 100), // Envia centavos a Stripe
+      amount: Math.round(total * 100),
       currency: 'mxn',
       metadata: {
         orden_id: orden.id,
@@ -197,6 +243,10 @@ export async function POST(req: NextRequest) {
         tipo_boleto_id: tipoBoletoId || '',
         tipo_boleto_nombre: type,
         cantidad: qty.toString(),
+        // === NUEVOS METADATA PARA SEATS.IO ===
+        seat_ids: usingSeatsIo ? JSON.stringify(seatIds) : '',
+        hold_token: holdToken || '',
+        seats_event_key: seatsEventKey || '',
       },
     });
 
