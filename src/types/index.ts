@@ -98,6 +98,16 @@ export interface Validacion {
   }
 }
 
+export interface EventoStaff {
+  id: string
+  evento_id: string
+  usuario_id: string
+  nombre_staff: string | null
+  puede_validar: boolean
+  puede_ver_reportes: boolean
+  fecha_asignacion: string
+}
+
 export interface EventoStats {
   boletos: {
     total_vendidos: number
