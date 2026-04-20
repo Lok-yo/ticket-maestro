@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/Components/layout/Navbar';
-import { Loader2, Users, ShieldAlert, CheckCircle2, MoreVertical, Crown } from 'lucide-react';
+import Link from 'next/link'; // Importante para la navegación
+import { Loader2, Users, ShieldAlert, CheckCircle2, MoreVertical, Crown, LayoutDashboard } from 'lucide-react';
 
 type UsuarioInfo = {
   id: string;
@@ -27,7 +28,6 @@ export default function AdminDashboardPage() {
         const json = await res.json();
         if (!res.ok) {
            setErrorMsg(json.error || 'Error al cargar usuarios');
-           // Si da error de permisos, regresar
            if (res.status === 401 || res.status === 403) router.push('/');
         } else {
            setUsers(json.data);
@@ -55,7 +55,6 @@ export default function AdminDashboardPage() {
       if (!res.ok) {
          setErrorMsg(json.error || 'Error al actualizar usuario');
       } else {
-         // UI optimistic update
          setUsers(prev => prev.map(u => u.id === userId ? { ...u, rol: newRole } : u));
       }
     } catch (err) {
@@ -87,6 +86,18 @@ export default function AdminDashboardPage() {
                  <p className="text-pink-500/60 text-xs font-bold uppercase tracking-wider mb-1">Productores</p>
                  <p className="text-2xl font-black">{users.filter(u => u.rol === 'organizador').length}</p>
               </div>
+
+              <Link 
+              href="/admin/dashboard/ver_detalles"
+  className="bg-pink-600 border border-pink-400 px-6 py-3 rounded-2xl flex flex-col items-center justify-center hover:bg-pink-500 hover:scale-[1.02] transition-all shadow-[0_0_20px_rgba(219,39,119,0.3)] group"
+>
+  <p className="text-pink-200 text-xs font-bold uppercase tracking-wider mb-1 group-hover:text-white">
+    Reporte
+  </p>
+  <p className="text-xl font-black text-white flex items-center gap-2">
+    Organizadores 
+  </p>
+              </Link>
            </div>
         </div>
 

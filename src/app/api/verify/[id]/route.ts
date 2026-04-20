@@ -100,6 +100,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
        }
     }
 
+    // 4. Registrar el intento de validación (GET) para estadísticas
+    const resultadoIntento = boleto.estado === 'usado' ? 'ya_usado' : (boleto.estado === 'vendido' ? 'valido' : 'invalido');
+    
+    await supabaseAdmin.from('validacion').insert({
+      boleto_id: ticketId,
+      codigo_escaneado: ticketId,
+      escaneado_por: user.id,
+      resultado: resultadoIntento,
+      motivo: boleto.estado === 'usado' ? 'Escaneo de boleto ya usado' : null,
+      evento_id: eventIdParam || boleto.evento_id
+    });
+
     return NextResponse.json({ data: boleto });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Error del servidor' }, { status: 500 });

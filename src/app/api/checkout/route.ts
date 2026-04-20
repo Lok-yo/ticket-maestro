@@ -178,8 +178,10 @@ export async function POST(req: NextRequest) {
     const cargoServicio = subtotal * 0.10;
     const total = subtotal + cargoServicio;
 
-    const comisionPlataforma = cargoServicio; 
-    const netoOrganizador = subtotal; 
+    // Retención del 30% según requerimiento
+    const porcentajeRetencion = 0.30;
+    const montoRetenido = subtotal * porcentajeRetencion;
+    const montoNeto = subtotal - montoRetenido;
 
     const ordenId = `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
@@ -221,8 +223,8 @@ export async function POST(req: NextRequest) {
         monto: total,
         cargo_servicio: cargoServicio,
         comision_organizadora: 0,
-        monto_neto: total,
-        monto_retenido: netoOrganizador,
+        monto_neto: montoNeto,
+        monto_retenido: montoRetenido,
         estado_escrow: 'retenido'
       });
       

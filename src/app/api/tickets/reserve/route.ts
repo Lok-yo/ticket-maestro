@@ -119,15 +119,15 @@ export async function POST(request: NextRequest) {
       .from('pago')
       .insert({
         orden_id: orden.id,
-        metodo: 'card',
-        estado: 'reservado',
+        metodo: 'tarjeta',
+        estado: 'en_espera',
         monto: comision.total,
         cargo_servicio: comision.cargo_servicio,
         comision_organizadora: comision.comision_organizadora,
         monto_neto: comision.monto_neto,
         monto_retenido: comision.monto_retenido,
         referencia: '',
-        estado_escrow: 'held',
+        estado_escrow: 'retenido',
       })
       .select()
       .single()

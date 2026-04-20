@@ -176,16 +176,18 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Calcular monto retenido y actualizar balance del organizador (tu lógica original)
+        // Calcular montos para actualizar balance del organizador
         const { data: pagoRegistrado } = await supabase
           .from('pago')
-          .select('monto_retenido')
+          .select('monto_neto, monto_retenido')
           .eq('orden_id', ordenId)
           .single();
           
-        const montoRetenido = pagoRegistrado?.monto_retenido || 0;
+        const montoNeto = Number(pagoRegistrado?.monto_neto || 0);
+        const montoRetenido = Number(pagoRegistrado?.monto_retenido || 0);
+        const totalVentaOrganizador = montoNeto + montoRetenido;
 
-        if (organizadorId && montoRetenido > 0) {
+        if (organizadorId && totalVentaOrganizador > 0) {
           const { data: balanceActual } = await supabase
             .from('balance_organizador')
             .select('*')
@@ -194,15 +196,15 @@ export async function POST(request: NextRequest) {
 
           if (balanceActual) {
             await supabase.from('balance_organizador').update({
-              saldo_disponible: Number(balanceActual.saldo_disponible) + Number(montoRetenido),
-              total_ganado: Number(balanceActual.total_ganado) + Number(montoRetenido),
+              saldo_disponible: Number(balanceActual.saldo_disponible) + totalVentaOrganizador,
+              total_ganado: Number(balanceActual.total_ganado) + totalVentaOrganizador,
               ultima_actualizacion: new Date().toISOString()
             }).eq('organizador_id', organizadorId);
           } else {
             await supabase.from('balance_organizador').insert({
               organizador_id: organizadorId,
-              saldo_disponible: Number(montoRetenido),
-              total_ganado: Number(montoRetenido)
+              saldo_disponible: totalVentaOrganizador,
+              total_ganado: totalVentaOrganizador
             });
           }
         }
