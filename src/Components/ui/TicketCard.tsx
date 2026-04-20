@@ -82,16 +82,22 @@ export function TicketCard({ ticketData }: TicketCardProps) {
     ctx.fillText(ticketData.eventName.toUpperCase(), 30, 60);
 
     ctx.font = '10px Inter, system-ui, sans-serif';
-    ctx.fillStyle = '#cbd5e1'; // gris clarito
+    ctx.fillStyle = '#cbd5e1';
     ctx.fillText('FECHA', 30, 100);
     ctx.fillText('LUGAR', 30, 135);
     ctx.fillText('TIPO / CLASE', 30, 170);
+    if (ticketData.seatLabel) {
+      ctx.fillText('ASIENTO', 30, 205);
+    }
 
     ctx.font = 'bold 15px Inter, system-ui, sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(ticketData.date, 30, 115);
     ctx.fillText(ticketData.location, 30, 150);
     ctx.fillText(ticketData.type, 30, 185);
+    if (ticketData.seatLabel) {
+      ctx.fillText(ticketData.seatLabel, 30, 220);
+    }
 
     // Precio
     ctx.font = 'bold 22px Inter, system-ui, sans-serif';
