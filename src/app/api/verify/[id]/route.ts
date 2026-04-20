@@ -8,9 +8,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { searchParams } = new URL(request.url);
     const eventIdParam = searchParams.get('event');
     
-    console.log(`[VERIFY] Buscando boleto: ${ticketId}`);
+    console.log(`[VERIFY] Buscando ticket: ${ticketId}`);
 
-    // NUEVO: Si el ID parece un Base64 (muy largo), intentar decodificarlo
     if (ticketId.length > 50) {
       try {
         const decoded = JSON.parse(Buffer.from(ticketId, 'base64').toString());
@@ -27,32 +26,35 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // 1. Verificar Sesión de quien escanea
     const { data: { user } } = await supabaseUsuario.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Debes iniciar sesión para escanear boletos' }, { status: 401 });
+    if (!user) return NextResponse.json({ error: 'Debes iniciar sesión para escanear tickets' }, { status: 401 });
 
-    const { data: usuarioDb } = await supabaseUsuario.from('usuario').select('rol').eq('id', user.id).single();
+    const { data: usuarioDb } = await supabaseUsuario.from('users').select('rol').eq('id', user.id).single();
     if (!usuarioDb) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
 
-    // 2. Buscar Boleto (usando Admin key)
+    // 2. Buscar Ticket (usando Admin key)
     const supabaseAdmin = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const { data: boletoRaw, error } = await supabaseAdmin
-      .from('boleto')
+    const { data: ticketRaw, error } = await supabaseAdmin
+      .from('tickets')
       .select(`
          id,
-         estado,
-         tipo,
-         codigo_qr,
-         evento_id,
-         evento (
+         status,
+         qr_code,
+         event_id,
+         seat_label,
+         events (
              titulo,
              fecha,
              organizador_id
          ),
-         orden (
-             usuario!fk_orden_usuario (
+         ticket_types (
+             nombre
+         ),
+         orders (
+             users (
                  nombre,
                  email
              )
@@ -65,54 +67,49 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       console.error(`[VERIFY] Error en DB para ${ticketId}:`, error);
     }
 
-    const boleto = boletoRaw as any;
+    const ticket = ticketRaw as any;
 
-    if (error || !boleto) {
-        // Log failed attempt if we have the event context
+    if (error || !ticket) {
         if (eventIdParam) {
-          await supabaseAdmin.from('validacion').insert({
-            boleto_id: null, // No podemos poner un ID que no existe si hay FK
-            codigo_escaneado: ticketId,
-            escaneado_por: user.id,
-            resultado: 'invalido',
-            motivo: 'Código no existe o es de otro evento',
-            evento_id: eventIdParam
+          // Si sabemos de qué evento viene el escaneo, registramos el intento fallido
+          await supabaseAdmin.from('checkins').insert({
+            scanned_by: user.id,
+            status: 'invalid',
+            motivo: 'Código no existe o es falso',
           });
         }
-        return NextResponse.json({ error: 'Boleto Inexistente o Falso.' }, { status: 404 });
+        return NextResponse.json({ error: 'Ticket Inexistente o Falso.' }, { status: 404 });
     }
 
-    // 3. Validar permisos (Es admin, es el organizador creador, o es staff con permiso)
+    // 3. Validar permisos
     const isAdmin = usuarioDb.rol === 'admin';
-    const isOwner = boleto.evento?.organizador_id === user.id;
+    const eventoAsociado = Array.isArray(ticket.events) ? ticket.events[0] : ticket.events;
+    const isOwner = eventoAsociado?.organizador_id === user.id;
 
     if (!isAdmin && !isOwner) {
-       // Checar si es staff
        const { data: staffData } = await supabaseAdmin
-         .from('evento_staff')
-         .select('puede_validar')
-         .eq('evento_id', boleto.evento_id)
-         .eq('usuario_id', user.id)
+         .from('event_staff')
+         .select('role')
+         .eq('event_id', ticket.event_id)
+         .eq('user_id', user.id)
          .single();
          
-       if (!staffData || !staffData.puede_validar) {
+       if (!staffData || (staffData.role !== 'validator' && staffData.role !== 'co_organizer')) {
           return NextResponse.json({ error: 'Acceso Denegado. Solo personal autorizado.' }, { status: 403 });
        }
     }
 
-    // 4. Registrar el intento de validación (GET) para estadísticas
-    const resultadoIntento = boleto.estado === 'usado' ? 'ya_usado' : (boleto.estado === 'vendido' ? 'valido' : 'invalido');
+    // 4. Registrar intento de validación
+    const resultadoIntento = ticket.status === 'usado' ? 'already_used' : (ticket.status === 'valido' ? 'valid' : 'invalid');
     
-    await supabaseAdmin.from('validacion').insert({
-      boleto_id: ticketId,
-      codigo_escaneado: ticketId,
-      escaneado_por: user.id,
-      resultado: resultadoIntento,
-      motivo: boleto.estado === 'usado' ? 'Escaneo de boleto ya usado' : null,
-      evento_id: eventIdParam || boleto.evento_id
+    await supabaseAdmin.from('checkins').insert({
+      ticket_id: ticketId,
+      scanned_by: user.id,
+      status: resultadoIntento,
+      motivo: ticket.status === 'usado' ? 'Escaneo de ticket ya usado' : null,
     });
 
-    return NextResponse.json({ data: boleto });
+    return NextResponse.json({ data: ticket });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Error del servidor' }, { status: 500 });
   }
@@ -123,9 +120,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     let { id: ticketId } = await params;
     const { searchParams } = new URL(request.url);
-    const eventIdParam = searchParams.get('event');
 
-    // NUEVO: Decodificar si es Base64
     if (ticketId.length > 50) {
       try {
         const decoded = JSON.parse(Buffer.from(ticketId, 'base64').toString());
@@ -138,7 +133,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { data: { user } } = await supabaseUsuario.auth.getUser();
     if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
-    const { data: usuarioDb } = await supabaseUsuario.from('usuario').select('rol').eq('id', user.id).single();
+    const { data: usuarioDb } = await supabaseUsuario.from('users').select('rol').eq('id', user.id).single();
     if (!usuarioDb) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
 
     const supabaseAdmin = createSupabaseClient(
@@ -146,72 +141,62 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Verificamos el boleto y permisos antes de quemar
-    const { data: checkBoletoRaw } = await supabaseAdmin.from('boleto').select('estado, evento_id, evento(organizador_id)').eq('id', ticketId).single();
-    const checkBoleto = checkBoletoRaw as any;
+    const { data: checkTicketRaw } = await supabaseAdmin
+      .from('tickets')
+      .select('status, event_id, events(organizador_id)')
+      .eq('id', ticketId)
+      .single();
+
+    const checkTicket = checkTicketRaw as any;
     
-    if (!checkBoleto) {
-      if (eventIdParam) {
-        await supabaseAdmin.from('validacion').insert({
-          boleto_id: null,
-          codigo_escaneado: ticketId,
-          escaneado_por: user.id,
-          resultado: 'invalido',
-          evento_id: eventIdParam
-        });
-      }
-      return NextResponse.json({ error: 'Boleto Inexistente' }, { status: 404 });
+    if (!checkTicket) {
+      return NextResponse.json({ error: 'Ticket Inexistente' }, { status: 404 });
     }
 
     // Permisos
     const isAdmin = usuarioDb.rol === 'admin';
-    const isOwner = checkBoleto.evento?.organizador_id === user.id;
+    const eventoAsociado = Array.isArray(checkTicket.events) ? checkTicket.events[0] : checkTicket.events;
+    const isOwner = eventoAsociado?.organizador_id === user.id;
 
     if (!isAdmin && !isOwner) {
        const { data: staffData } = await supabaseAdmin
-         .from('evento_staff')
-         .select('puede_validar')
-         .eq('evento_id', checkBoleto.evento_id)
-         .eq('usuario_id', user.id)
+         .from('event_staff')
+         .select('role')
+         .eq('event_id', checkTicket.event_id)
+         .eq('user_id', user.id)
          .single();
          
-       if (!staffData || !staffData.puede_validar) {
+       if (!staffData || (staffData.role !== 'validator' && staffData.role !== 'co_organizer')) {
           return NextResponse.json({ error: 'Acceso Denegado.' }, { status: 403 });
        }
     }
 
-    if (checkBoleto.estado === 'usado') {
-       // Log failed attempt
-       await supabaseAdmin.from('validacion').insert({
-         boleto_id: ticketId,
-         codigo_escaneado: ticketId,
-         escaneado_por: user.id,
-         resultado: 'ya_usado',
-         motivo: 'El boleto ya había sido escaneado',
-         evento_id: eventIdParam || checkBoleto.evento_id
+    if (checkTicket.status === 'usado') {
+       await supabaseAdmin.from('checkins').insert({
+         ticket_id: ticketId,
+         scanned_by: user.id,
+         status: 'already_used',
+         motivo: 'El ticket ya había sido escaneado'
        });
-       return NextResponse.json({ error: 'Boleto YA FUE USADO.' }, { status: 400 });
+       return NextResponse.json({ error: 'Ticket YA FUE USADO.' }, { status: 400 });
     }
 
-    const { data: updatedBoleto, error } = await supabaseAdmin
-      .from('boleto')
-      .update({ estado: 'usado' })
+    const { data: updatedTicket, error } = await supabaseAdmin
+      .from('tickets')
+      .update({ status: 'usado' })
       .eq('id', ticketId)
-      .select('estado')
+      .select('status')
       .single();
 
     if (error) throw error;
 
-    // Registrar en 'validacion' para el reporte
-    await supabaseAdmin.from('validacion').insert({
-      boleto_id: ticketId,
-      codigo_escaneado: ticketId,
-      escaneado_por: user.id,
-      resultado: 'valido',
-      evento_id: eventIdParam || checkBoleto.evento_id
+    await supabaseAdmin.from('checkins').insert({
+      ticket_id: ticketId,
+      scanned_by: user.id,
+      status: 'valid'
     });
 
-    return NextResponse.json({ success: true, estado: updatedBoleto.estado });
+    return NextResponse.json({ success: true, estado: updatedTicket.status });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Error del servidor' }, { status: 500 });
   }

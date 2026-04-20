@@ -1,131 +1,140 @@
 export type UserRole = 'admin' | 'cliente' | 'organizador'
-export type EventStatus = 'activo' | 'cancelado' | 'finalizado'
-export type TicketStatus = 'disponible' | 'vendido' | 'reservado' | 'usado'
-export type PaymentMethod = 'tarjeta' | 'transferencia' | 'efectivo'
-export type PaymentStatus = 'exitoso' | 'fallido' | 'en_espera'
+export type EventStatus = 'draft' | 'activo' | 'cancelado' | 'finalizado'
 export type OrderStatus = 'pendiente' | 'pagada' | 'cancelada'
-export type EscrowStatus = 'retenido' | 'liberado'
+export type TicketStatus = 'valido' | 'usado' | 'cancelado'
+export type PaymentStatus = 'pending' | 'successful' | 'failed'
+export type PayoutStatus = 'pending' | 'processed' | 'failed'
+export type PayoutType = 'daily_available' | 'event_final_retention'
 
-export interface Usuario {
+export interface User {
   id: string
   nombre: string
   email: string
-  password?: string
   rol: UserRole
+  clabe?: string | null
   fecha_registro: string
 }
 
-export interface Categoria {
+export interface Category {
   id: string
   nombre: string
-  descripcion: string
-}
-
-export interface TipoBoleto {
-  id: string
-  evento_id: string
-  nombre: string        // 'General', 'Preferente', 'VIP'
-  precio: number
-  stock_total: number
-  stock_disponible: number
-  descripcion?: string
-  max_por_compra: number
-  created_at?: string
+  descripcion?: string | null
 }
 
 export interface Evento {
   id: string
   titulo: string
+  descripcion?: string | null
   fecha: string
   ubicacion: string
   capacidad: number
   estado: EventStatus
-  descripcion: string
-  categoria_id: string
-  categoria?: Categoria
-  organizador_id?: string
+  categoria_id?: string | null
+  organizador_id?: string | null
+  imagen?: string | null
   precio_base?: number
-  imagen?: string
-  /** Clave del chart en seats.io (venue). */
   seats_chart_key?: string | null
-  /** Clave del evento en seats.io (una por evento de BD). */
   seats_evento_key?: string | null
-  tipo_boleto?: TipoBoleto[]  // Relación con tipos de boleto
+  created_at: string
+  updated_at: string
 }
 
-export interface Boleto {
+export interface EventStaff {
   id: string
-  codigo_qr: string
+  event_id: string
+  user_id: string
+  role: string
+  created_at: string
+}
+
+export interface TicketType {
+  id: string
+  event_id: string
+  nombre: string
   precio: number
-  tipo: string
-  estado: TicketStatus
-  fecha_emision: string
-  evento_id: string
-  evento?: Evento
+  total_stock: number
+  available_stock: number
+  max_por_compra: number
+  created_at: string
 }
 
-export interface Orden {
+export interface Order {
   id: string
-  total: number
-  fecha: string
-  estado: OrderStatus
+  user_id?: string | null
+  event_id?: string | null
+  total_amount: number
   subtotal: number
-  descuento: number
-  usuario_id: string
-  usuario?: Usuario
+  status: OrderStatus
+  stripe_payment_intent?: string | null
+  created_at: string
 }
 
-export interface Pago {
+export interface Ticket {
   id: string
-  metodo: PaymentMethod
-  estado: PaymentStatus
-  referencia: string
-  monto: number
-  cargo_servicio: number
-  comision_organizadora: number
-  monto_neto: number
-  monto_retenido: number
-  fecha_dispersion: string
-  estado_escrow: EscrowStatus
-  orden_id: string
+  order_id?: string | null
+  user_id?: string | null
+  event_id?: string | null
+  ticket_type_id?: string | null
+  seat_label?: string | null
+  qr_code: string
+  status: TicketStatus
+  created_at: string
 }
 
-export interface Validacion {
+export interface Payment {
   id: string
-  boleto_id: string
-  escaneado_por: string
-  resultado: string
-  motivo?: string
-  fecha_hora: string
-  boleto?: {
-    tipo: string
-  }
+  order_id?: string | null
+  provider: string
+  provider_payment_id?: string | null
+  amount: number
+  platform_fee: number
+  retained_amount: number
+  available_to_organizer: number
+  status: PaymentStatus
+  created_at: string
 }
 
-export interface EventoStaff {
+export interface OrganizerBalance {
+  organizer_id: string
+  available_balance: number
+  retained_balance: number
+  total_earned: number
+  updated_at: string
+}
+
+export interface Payout {
   id: string
-  evento_id: string
-  usuario_id: string
-  nombre_staff: string | null
-  puede_validar: boolean
-  puede_ver_reportes: boolean
-  fecha_asignacion: string
+  organizer_id?: string | null
+  amount: number
+  type: PayoutType
+  status: PayoutStatus
+  clabe_account: string
+  created_at: string
+}
+
+export interface Checkin {
+  id: string
+  ticket_id?: string | null
+  scanned_by?: string | null
+  status: string
+  motivo?: string | null
+  scanned_at: string
 }
 
 export interface EventoStats {
-  boletos: {
-    total_vendidos: number
-    total_usados: number
-    total_restantes: number
-    asistencia_porcentaje: number
+  tickets: {
+    total_sold: number
+    total_used: number
+    total_remaining: number
+    attendance_percentage: number
   }
-  resumen_validaciones: {
-    total_intentos: number
-    validos: number
-    invalidos: number
-    ya_usados: number
+  checkins_summary: {
+    total_attempts: number
+    valid: number
+    invalid: number
+    already_used: number
   }
-  ultimos_ingresos: Validacion[]
+  recent_checkins: Checkin[]
 }
 
 export interface ApiResponse<T> {
