@@ -281,6 +281,8 @@ export function SearchForm({
                           e.stopPropagation();
                           setStartDate(null);
                           setEndDate(null);
+                          setCurrentMonth(new Date().getMonth());
+                          setCurrentYear(new Date().getFullYear());
                       }}
                       className="px-6 py-2.5 rounded-xl text-sm font-bold text-pink-400 hover:bg-pink-500/10 transition"
                    >

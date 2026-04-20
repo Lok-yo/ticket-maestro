@@ -1,4 +1,4 @@
-// src/app/page.tsx
+// src/app/page.tsx OwO
 import Image from 'next/image';
 import Navbar from '../Components/layout/Navbar';
 import { SearchForm } from '../Components/ui/SearchForm';
@@ -42,16 +42,16 @@ export default async function HomePage({
       {/* Hero con filtro */}
       <section className="relative h-[620px] flex items-center justify-center">
         <div className="absolute inset-0 overflow-hidden">
-           <div className="absolute inset-0 bg-black/60 z-10" />
-           <Image
-             src="https://images.unsplash.com/photo-1516450360452-9312f5e86fc7"
-             alt="Grupo musical"
-             fill
-             quality={70}
-             sizes="100vw"
-             className="object-cover"
-             priority
-           />
+          <div className="absolute inset-0 bg-black/60 z-10" />
+          <Image
+            src="https://images.unsplash.com/photo-1516450360452-9312f5e86fc7"
+            alt="Grupo musical"
+            fill
+            quality={70}
+            sizes="100vw"
+            className="object-cover"
+            priority
+          />
         </div>
 
         <div className="relative z-20 text-center px-6 max-w-5xl mx-auto">
@@ -59,10 +59,10 @@ export default async function HomePage({
             ANTICIPA TUS BOLETOS
           </h1>
 
-          <SearchForm 
-             initialUbicacion={ubicacion} 
-             initialFecha={fecha} 
-             initialSearch={searchTerm} 
+          <SearchForm
+            initialUbicacion={ubicacion}
+            initialFecha={fecha}
+            initialSearch={searchTerm}
           />
         </div>
       </section>
