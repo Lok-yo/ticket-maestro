@@ -14,7 +14,7 @@ interface TicketCardProps {
     type: string;
     price: number;
     userName: string;
-    qrRaw?: string;
+    seatLabel?: string | null;
   };
 }
 
@@ -159,6 +159,12 @@ export function TicketCard({ ticketData }: TicketCardProps) {
               <Tag className="w-4 h-4 opacity-80 shrink-0" />
               <p>Clase: {ticketData.type}</p>
             </div>
+            {ticketData.seatLabel && (
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 opacity-80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                <p>Asiento: {ticketData.seatLabel}</p>
+              </div>
+            )}
           </div>
         </div>
 

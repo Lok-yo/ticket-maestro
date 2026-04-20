@@ -37,6 +37,7 @@ export default async function MisBoletosPage() {
         precio,
         tipo,
         estado,
+        etiqueta_asiento,
         evento (
           titulo,
           fecha,
@@ -67,14 +68,17 @@ export default async function MisBoletosPage() {
 
         ticketsReales.push({
           id: boleto.id,
-          qrCodeString: boleto.codigo_qr || `https://ticket-maestro.com/verify/${boleto.id}`, // Fallback al id temporal
-          qrRaw: JSON.stringify({ ticketId: boleto.id }),
+          // Usar el QR completo guardado por el webhook de Stripe; si no existe, generar uno básico
+          qrCodeString: (boleto.codigo_qr && !boleto.codigo_qr.startsWith('PENDIENTE'))
+            ? boleto.codigo_qr
+            : Buffer.from(JSON.stringify({ ticketId: boleto.id })).toString('base64'),
           eventName: boleto.evento ? boleto.evento.titulo : 'Evento Desconocido',
           date: formatter.format(fechaEventoRaw),
           location: boleto.evento ? boleto.evento.ubicacion : 'Por definir',
           type: boleto.tipo,
           price: boleto.precio,
           userName: user?.nombre || 'Pasajero',
+          seatLabel: boleto.etiqueta_asiento || null,
         });
       });
     });

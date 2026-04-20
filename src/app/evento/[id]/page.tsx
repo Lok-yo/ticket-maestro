@@ -41,16 +41,23 @@ export default function EventDetailPage() {
               setEventData(data);
               
               if (data.tipo_boleto && data.tipo_boleto.length > 0) {
-                const tipos = data.tipo_boleto.map((t: TipoBoleto) => ({
-                  id: t.id,
-                  nombre: t.nombre,
-                  precio: Number(t.precio),
-                  stock_disponible: t.stock_disponible,
-                  stock_total: t.stock_total,
-                  max_por_compra: t.max_por_compra || 10,
-                  descripcion: t.descripcion || '',
-                  isFallback: false,
-                }));
+                const ORDEN_TIPOS: Record<string, number> = { 'General': 1, 'Preferente': 2, 'VIP': 3 };
+                const tipos = data.tipo_boleto
+                  .map((t: TipoBoleto) => ({
+                    id: t.id,
+                    nombre: t.nombre,
+                    precio: Number(t.precio),
+                    stock_disponible: t.stock_disponible,
+                    stock_total: t.stock_total,
+                    max_por_compra: t.max_por_compra || 10,
+                    descripcion: t.descripcion || '',
+                    isFallback: false,
+                  }))
+                  .sort((a: any, b: any) => {
+                    const pa = ORDEN_TIPOS[a.nombre] ?? 4;
+                    const pb = ORDEN_TIPOS[b.nombre] ?? 4;
+                    return pa - pb;
+                  });
                 setTicketTypes(tipos);
                 setSelectedType(tipos[0]);
               } else {
