@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { error } = await supabase
-      .from('balance_organizador')
+      .from('profiles')
       .upsert({ 
          organizador_id: user.id, 
          clabe
@@ -27,3 +27,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
+

@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // Verificar que el evento existe
     const { data: evento, error: eventoError } = await supabase
-      .from('evento')
+      .from('events')
       .select('id')
       .eq('id', evento_id)
       .single()

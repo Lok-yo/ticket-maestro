@@ -16,7 +16,7 @@ export default async function MisBoletosPage() {
   // Obtener perfil (Usuario)
   let user: Usuario | null = null;
   const { data } = await supabase
-    .from('usuario')
+    .from('profiles')
     .select('*')
     .eq('id', authUser.id)
     .single();
@@ -26,7 +26,7 @@ export default async function MisBoletosPage() {
   // Consulta real a Supabase
   // Extraemos las órdenes del usuario, sus boletos, y el evento de cada boleto
   const { data: ordenes, error: dbError } = await supabase
-    .from('orden')
+    .from('orders')
     .select(`
       id,
       total,
@@ -119,3 +119,4 @@ export default async function MisBoletosPage() {
     </div>
   );
 }
+

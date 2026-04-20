@@ -41,7 +41,7 @@ export async function validateAndUseTicket(
 
   // Paso 3 — buscar boleto en la base de datos
   const { data: boleto, error } = await supabase
-    .from('boleto')
+    .from('tickets')
     .select('*, evento:evento(*)')
     .eq('id', payload.ticketId)
     .eq('evento_id', eventoId)
@@ -72,7 +72,7 @@ export async function validateAndUseTicket(
 
   // Paso 6 — marcar como usado
   const { error: updateError } = await supabase
-    .from('boleto')
+    .from('tickets')
     .update({ estado: 'vendido' })
     .eq('id', payload.ticketId)
 

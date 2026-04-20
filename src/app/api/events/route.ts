@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createEventSchema } from '@/lib/schemas/event.schema'
-import type { ApiResponse, Evento } from '@/types'
+import type { ApiResponse, Event } from '@/types'
 import { VENUE_SEAT_STOCKS } from '@/lib/seatCategories'
 import { createSeatsIoEventForTicketEvent, getSeatsIoVenueChartKey } from '@/lib/seatsioServer'
 
@@ -19,25 +19,25 @@ export async function GET(request: NextRequest) {
     const to = from + limit - 1
 
     let query = supabase
-      .from('evento')
-      .select('*, categoria(*), tipo_boleto(*)', { count: 'exact' })
-      .eq('estado', 'activo')
-      .order('fecha', { ascending: true })
+      .from('events')
+      .select('*, category:categories(*), ticket_types(*)', { count: 'exact' })
+      .eq('status', 'published')
+      .order('date', { ascending: true })
       .range(from, to)
 
     if (search) {
-      query = query.ilike('titulo', `%${search}%`)
+      query = query.ilike('title', `%${search}%`)
     }
 
     if (categoria) {
-      query = query.eq('categoria_id', categoria)
+      query = query.eq('category_id', categoria)
     }
 
     const { data, error, count } = await query
 
     if (error) throw error
 
-    return NextResponse.json<ApiResponse<Evento[]>>({
+    return NextResponse.json<ApiResponse<Event[]>>({
       data: data || [],
       message: `${count} eventos encontrados`,
     })
@@ -65,8 +65,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Verificar rol directamente en la tabla pública para máxima seguridad
-    const { data: usuarioDb } = await supabase.from('usuario').select('rol').eq('id', user.id).single();
-    const role = usuarioDb?.rol;
+    const { data: usuarioDb } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const role = usuarioDb?.role;
 
     if (role !== 'organizador' && role !== 'admin') {
       return NextResponse.json<ApiResponse<null>>(
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       : (precio_base || 800);
 
     const { data, error } = await supabase
-      .from('evento')
+      .from('events')
       .insert({
         id: evtId,
         titulo,
@@ -178,11 +178,11 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      const { error: tiposError } = await supabase.from('tipo_boleto').insert(tiposToInsert)
+      const { error: tiposError } = await supabase.from('ticket_types').insert(tiposToInsert)
 
       if (tiposError) {
         console.error('Error insertando tipos de boleto:', tiposError)
-        await supabase.from('evento').delete().eq('id', evtId)
+        await supabase.from('events').delete().eq('id', evtId)
         return NextResponse.json<ApiResponse<null>>(
           { error: 'No se pudieron crear los tipos de boleto.' },
           { status: 500 }
@@ -206,14 +206,14 @@ export async function POST(request: NextRequest) {
           date: fechaStr,
         })
         const { error: updErr } = await supabase
-          .from('evento')
+          .from('events')
           .update({ seats_chart_key: chartKey, seats_evento_key: evtId })
           .eq('id', evtId)
         if (updErr) throw updErr
       } catch (e: any) {
         console.error('Error creando evento en seats.io:', e)
-        await supabase.from('tipo_boleto').delete().eq('evento_id', evtId)
-        await supabase.from('evento').delete().eq('id', evtId)
+        await supabase.from('ticket_types').delete().eq('evento_id', evtId)
+        await supabase.from('events').delete().eq('id', evtId)
         return NextResponse.json<ApiResponse<null>>(
           { error: e?.message || 'No se pudo activar el mapa de asientos en seats.io.' },
           { status: 502 }
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: eventoFinal } = await supabase.from('evento').select('*').eq('id', evtId).single()
+    const { data: eventoFinal } = await supabase.from('events').select('*').eq('id', evtId).single()
 
     return NextResponse.json<ApiResponse<Evento>>(
       { data: (eventoFinal || data) as Evento, message: 'Evento creado exitosamente' },

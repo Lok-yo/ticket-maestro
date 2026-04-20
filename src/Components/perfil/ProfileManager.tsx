@@ -32,7 +32,7 @@ export default function ProfileManager({ user }: { user: Usuario }) {
     try {
       // 1. Update in public.usuario
       const { error: dbError } = await supabase
-        .from('usuario')
+        .from('profiles')
         .update({ nombre: newName })
         .eq('id', user.id);
 
@@ -223,3 +223,4 @@ export default function ProfileManager({ user }: { user: Usuario }) {
     </>
   );
 }
+

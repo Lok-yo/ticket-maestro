@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     // Obtener capacidad del evento
     const { data: evento, error: eventoError } = await supabase
-      .from('evento')
+      .from('events')
       .select('id, capacidad, estado, titulo')
       .eq('id', evento_id)
       .single()
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     // Contar boletos vendidos o pendientes
     const { count: boletosVendidos } = await supabase
-      .from('boleto')
+      .from('tickets')
       .select('*', { count: 'exact', head: true })
       .eq('evento_id', evento_id)
       .in('estado', ['confirmed', 'pending'])

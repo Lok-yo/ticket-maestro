@@ -6,21 +6,15 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Search, Info, LogIn, UserPlus, Menu, X } from 'lucide-react';
-
-type Usuario = {
-  id: string;
-  nombre: string;
-  email: string;
-  rol: string;
-};
+import type { Profile } from '@/types';
 
 type NavbarProps = {
-  user: Usuario | null;
+  user: Profile | null;
 };
 
 export default function Navbar({ user: initialUser }: NavbarProps) {
   const router = useRouter();
-  const [user, setUser] = useState<Usuario | null>(initialUser);
+  const [user, setUser] = useState<Profile | null>(initialUser);
   const [loading, setLoading] = useState(!initialUser);
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -35,9 +29,9 @@ export default function Navbar({ user: initialUser }: NavbarProps) {
           const supabase = createClient();
           const { data: { user: authUser } } = await supabase.auth.getUser();
           if (authUser && isMounted) {
-             const { data, error } = await supabase.from('usuario').select('*').eq('id', authUser.id).single();
+             const { data, error } = await supabase.from('profiles').select('*').eq('id', authUser.id).single();
              if (!error && data) {
-                 setUser(data as Usuario);
+                 setUser(data as Profile);
              }
           }
       } finally {
@@ -140,11 +134,11 @@ export default function Navbar({ user: initialUser }: NavbarProps) {
                   className="flex items-center gap-3 px-4 py-2 hover:bg-white/10 rounded-2xl transition"
                 >
                   <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm border-2 border-white/40">
-                    {user.nombre.charAt(0).toUpperCase()}
+                    {user.full_name?.charAt(0).toUpperCase() || '?'}
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-semibold text-white leading-tight">{user.nombre}</p>
-                    <p className="text-xs text-pink-100 leading-tight">{user.rol}</p>
+                    <p className="text-sm font-semibold text-white leading-tight">{user.full_name}</p>
+                    <p className="text-xs text-pink-100 leading-tight">{user.role}</p>
                   </div>
                   <svg
                     className={`w-4 h-4 text-white transition-transform duration-200 ${menuAbierto ? 'rotate-180' : ''}`}
@@ -158,7 +152,7 @@ export default function Navbar({ user: initialUser }: NavbarProps) {
                 {menuAbierto && (
                   <div className="absolute right-0 mt-2 w-56 bg-[#1a1030] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-white/10">
-                      <p className="text-white text-sm font-semibold truncate">{user.nombre}</p>
+                      <p className="text-white text-sm font-semibold truncate">{user.full_name}</p>
                       <p className="text-gray-400 text-xs truncate">{user.email}</p>
                     </div>
                     <div className="py-1">
@@ -170,13 +164,13 @@ export default function Navbar({ user: initialUser }: NavbarProps) {
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
                         Mis boletos
                       </Link>
-                      {(user.rol === 'organizador' || user.rol === 'admin') && (
+                      {(user.role === 'organizador' || user.role === 'admin') && (
                         <Link href="/organizador" onClick={() => setMenuAbierto(false)} className="flex items-center gap-3 px-4 py-3 text-sm text-purple-300 hover:bg-white/10 hover:text-purple-200 transition font-medium">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                           Panel del organizador
                         </Link>
                       )}
-                      {user.rol === 'admin' && (
+                      {user.role === 'admin' && (
                         <Link href="/admin/dashboard" onClick={() => setMenuAbierto(false)} className="flex items-center gap-3 px-4 py-3 text-sm text-pink-300 hover:bg-white/10 hover:text-pink-200 transition">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                           Panel de admin
@@ -231,10 +225,10 @@ export default function Navbar({ user: initialUser }: NavbarProps) {
                 <div className="border-t border-white/10 pt-3 mt-2">
                   <div className="flex items-center gap-3 px-4 py-2 mb-2">
                     <div className="w-10 h-10 rounded-full bg-pink-500/30 flex items-center justify-center text-white font-bold border-2 border-pink-500/50">
-                      {user.nombre.charAt(0).toUpperCase()}
+                      {user.full_name?.charAt(0).toUpperCase() || '?'}
                     </div>
                     <div>
-                      <p className="text-white font-semibold text-sm">{user.nombre}</p>
+                      <p className="text-white font-semibold text-sm">{user.full_name}</p>
                       <p className="text-gray-400 text-xs">{user.email}</p>
                     </div>
                   </div>
@@ -247,13 +241,13 @@ export default function Navbar({ user: initialUser }: NavbarProps) {
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
                   Mis boletos
                 </Link>
-                {(user.rol === 'organizador' || user.rol === 'admin') && (
+                {(user.role === 'organizador' || user.role === 'admin') && (
                   <Link href="/organizador" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-purple-300 hover:bg-white/10 rounded-xl transition font-medium">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                     Panel del organizador
                   </Link>
                 )}
-                {user.rol === 'admin' && (
+                {user.role === 'admin' && (
                   <Link href="/admin/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-pink-300 hover:bg-white/10 rounded-xl transition">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                     Panel de admin

@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Navbar from '../Components/layout/Navbar';
 import { SearchForm } from '../Components/ui/SearchForm';
 import { createClient } from '@/lib/supabase/server';
-import type { Usuario } from '@/types';
+import type { Profile } from '@/types';
 import EventGrid from '@/Components/ui/EventGrid';
 
 export default async function HomePage({
@@ -18,18 +18,18 @@ export default async function HomePage({
   const fechaFin = params.fechaFin || '';
 
   // Solo resolvemos el usuario en el servidor (rápido, usa cookies en caché)
-  let user: Usuario | null = null;
+  let user: Profile | null = null;
   try {
     const supabase = await createClient();
     const { data: { user: authUser } } = await supabase.auth.getUser();
 
     if (authUser) {
       const { data } = await supabase
-        .from('usuario')
-        .select('id, nombre, email, rol, fecha_registro')
+        .from('profiles')
+        .select('id, full_name, role, created_at')
         .eq('id', authUser.id)
         .single();
-      user = data as Usuario;
+      user = data as Profile;
     }
   } catch {
     // Usuario no logueado

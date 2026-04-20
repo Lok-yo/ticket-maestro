@@ -1,135 +1,127 @@
-export type UserRole = 'admin' | 'cliente' | 'organizador'
-export type EventStatus = 'activo' | 'cancelado' | 'finalizado'
-export type TicketStatus = 'disponible' | 'vendido' | 'reservado' | 'usado'
-export type PaymentMethod = 'tarjeta' | 'transferencia' | 'efectivo'
-export type PaymentStatus = 'exitoso' | 'fallido' | 'en_espera'
-export type OrderStatus = 'pendiente' | 'pagada' | 'cancelada'
-export type EscrowStatus = 'retenido' | 'liberado'
+export type UserRole = 'admin' | 'organizer' | 'customer';
+export type EventStatus = 'draft' | 'published' | 'cancelled' | 'completed';
+export type OrderStatus = 'pending' | 'paid' | 'expired' | 'cancelled';
+export type TicketStatus = 'valid' | 'used' | 'refunded' | 'invalid';
+export type PaymentStatus = 'pending' | 'succeeded' | 'failed' | 'refunded';
+export type EscrowStatus = 'retained' | 'released';
 
-export interface Usuario {
-  id: string
-  nombre: string
-  email: string
-  password?: string
-  rol: UserRole
-  fecha_registro: string
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  created_at: string;
 }
 
-export interface Categoria {
-  id: string
-  nombre: string
-  descripcion: string
+export interface Profile {
+  id: string;
+  full_name: string;
+  role: UserRole;
+  clabe?: string;
+  total_earned: number;
+  available_balance: number;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface TipoBoleto {
-  id: string
-  evento_id: string
-  nombre: string        // 'General', 'Preferente', 'VIP'
-  precio: number
-  stock_total: number
-  stock_disponible: number
-  descripcion?: string
-  max_por_compra: number
-  created_at?: string
+export interface Event {
+  id: string;
+  organizer_id: string;
+  category_id?: string;
+  title: string;
+  description?: string;
+  location?: string;
+  date: string;
+  image_url?: string;
+  status: EventStatus;
+  seats_chart_key?: string;
+  seats_event_key?: string;
+  capacity?: number;
+  commission_rate: number;
+  retention_rate: number;
+  created_at: string;
+  updated_at: string;
+  // Joins
+  category?: Category;
+  organizer?: Profile;
+  ticket_types?: TicketType[];
 }
 
-export interface Evento {
-  id: string
-  titulo: string
-  fecha: string
-  ubicacion: string
-  capacidad: number
-  estado: EventStatus
-  descripcion: string
-  categoria_id: string
-  categoria?: Categoria
-  organizador_id?: string
-  precio_base?: number
-  imagen?: string
-  /** Clave del chart en seats.io (venue). */
-  seats_chart_key?: string | null
-  /** Clave del evento en seats.io (una por evento de BD). */
-  seats_evento_key?: string | null
-  tipo_boleto?: TipoBoleto[]  // Relación con tipos de boleto
+export interface TicketType {
+  id: string;
+  event_id: string;
+  name: string;
+  price: number;
+  total_stock: number;
+  available_stock: number;
+  description?: string;
+  max_per_order: number;
+  created_at: string;
 }
 
-export interface Boleto {
-  id: string
-  codigo_qr: string
-  precio: number
-  tipo: string
-  estado: TicketStatus
-  fecha_emision: string
-  evento_id: string
-  evento?: Evento
+export interface EventStaff {
+  id: string;
+  event_id: string;
+  user_id: string;
+  can_validate: boolean;
+  can_view_reports: boolean;
+  created_at: string;
+  // Joins
+  user?: Profile;
 }
 
-export interface Orden {
-  id: string
-  total: number
-  fecha: string
-  estado: OrderStatus
-  subtotal: number
-  descuento: number
-  usuario_id: string
-  usuario?: Usuario
+export interface Order {
+  id: string;
+  customer_id: string;
+  event_id: string;
+  status: OrderStatus;
+  subtotal: number;
+  service_fee: number;
+  total: number;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+  // Joins
+  customer?: Profile;
+  event?: Event;
+  tickets?: Ticket[];
+  payment?: Payment;
 }
 
-export interface Pago {
-  id: string
-  metodo: PaymentMethod
-  estado: PaymentStatus
-  referencia: string
-  monto: number
-  cargo_servicio: number
-  comision_organizadora: number
-  monto_neto: number
-  monto_retenido: number
-  fecha_dispersion: string
-  estado_escrow: EscrowStatus
-  orden_id: string
+export interface Ticket {
+  id: string;
+  order_id: string;
+  ticket_type_id: string;
+  qr_code: string;
+  status: TicketStatus;
+  seat_info?: any;
+  validated_at?: string;
+  validated_by?: string;
+  created_at: string;
+  // Joins
+  ticket_type?: TicketType;
+  order?: Order;
 }
 
-export interface Validacion {
-  id: string
-  boleto_id: string
-  escaneado_por: string
-  resultado: string
-  motivo?: string
-  fecha_hora: string
-  boleto?: {
-    tipo: string
-  }
+export interface Payment {
+  id: string;
+  order_id: string;
+  stripe_id?: string;
+  status: PaymentStatus;
+  amount: number;
+  fee_amount: number;
+  retained_amount: number;
+  net_amount: number;
+  escrow_status: EscrowStatus;
+  created_at: string;
 }
 
-export interface EventoStaff {
-  id: string
-  evento_id: string
-  usuario_id: string
-  nombre_staff: string | null
-  puede_validar: boolean
-  puede_ver_reportes: boolean
-  fecha_asignacion: string
+export interface Payout {
+  id: string;
+  organizer_id: string;
+  amount: number;
+  status: string;
+  processed_at?: string;
+  created_at: string;
 }
 
-export interface EventoStats {
-  boletos: {
-    total_vendidos: number
-    total_usados: number
-    total_restantes: number
-    asistencia_porcentaje: number
-  }
-  resumen_validaciones: {
-    total_intentos: number
-    validos: number
-    invalidos: number
-    ya_usados: number
-  }
-  ultimos_ingresos: Validacion[]
-}
-
-export interface ApiResponse<T> {
-  data?: T
-  error?: string
-  message?: string
-}

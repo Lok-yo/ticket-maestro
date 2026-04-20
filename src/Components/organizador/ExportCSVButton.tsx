@@ -40,3 +40,4 @@ export default function ExportCSVButton({ eventoId, validaciones }: ExportCSVBut
     </button>
   )
 }
+

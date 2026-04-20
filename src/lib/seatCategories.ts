@@ -22,3 +22,4 @@ export function categoryKeysForSeatsIoFilter(displayName: string): string[] {
   const n = displayName.trim()
   return [`category:${n}`, `category:${normalizeSeatCategory(n)}`]
 }
+

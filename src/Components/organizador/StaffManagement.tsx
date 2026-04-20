@@ -85,3 +85,4 @@ export default function StaffManagement({ eventoId }: StaffManagementProps) {
     </div>
   )
 }
+

@@ -15,7 +15,7 @@ export default async function PerfilPage() {
 
   // Obtener perfil (Usuario)
   const { data } = await supabase
-    .from('usuario')
+    .from('profiles')
     .select('*')
     .eq('id', authUser.id)
     .single();
@@ -41,3 +41,4 @@ export default async function PerfilPage() {
     </div>
   );
 }
+

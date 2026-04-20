@@ -41,3 +41,4 @@ export async function createSeatsIoEventForTicketEvent(params: {
     throw new Error(`seats.io create event failed (${res.status}): ${text}`)
   }
 }
+

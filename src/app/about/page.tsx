@@ -10,7 +10,7 @@ export default async function AboutPage() {
 
   let user: Usuario | null = null;
   if (authUser) {
-    const { data } = await supabase.from('usuario').select('*').eq('id', authUser.id).single();
+    const { data } = await supabase.from('profiles').select('*').eq('id', authUser.id).single();
     if (data) user = data as Usuario;
   }
 
@@ -119,3 +119,4 @@ export default async function AboutPage() {
     </div>
   );
 }
+

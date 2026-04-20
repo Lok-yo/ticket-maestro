@@ -68,7 +68,7 @@ export default function NuevoEventoPage() {
 
   useEffect(() => {
     const fetchCats = async () => {
-      const { data } = await supabase.from('categoria').select('*');
+      const { data } = await supabase.from('categories').select('*');
       if (data) {
         setCategorias(data);
         if (data.length > 0) {
@@ -438,3 +438,4 @@ export default function NuevoEventoPage() {
     </div>
   );
 }
+

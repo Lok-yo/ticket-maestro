@@ -41,9 +41,9 @@ function SeatSelectionStep({
 
   // Mapeo de categorías de seats.io a precios (ajústalo según tus categorías reales)
   const categoryPriceMap: Record<string, number> = {
-    'General': eventData?.tipo_boleto?.find((t: any) => t.nombre === 'General')?.precio || 800,
-    'Preferente': eventData?.tipo_boleto?.find((t: any) => t.nombre === 'Preferente')?.precio || 1200,
-    'VIP': eventData?.tipo_boleto?.find((t: any) => t.nombre === 'VIP')?.precio || 2000,
+    'General': eventData?.ticket_types?.find((t: any) => t.name === 'General')?.price || 800,
+    'Preferente': eventData?.ticket_types?.find((t: any) => t.name === 'Preferente')?.price || 1200,
+    'VIP': eventData?.ticket_types?.find((t: any) => t.name === 'VIP')?.price || 2000,
   };
 
   const handleObjectSelected = (obj: any) => {
@@ -236,22 +236,22 @@ function CheckoutPageContent() {
       }
 
       const { data: profile } = await supabase
-        .from('usuario')
-        .select('nombre, email')
+        .from('profiles')
+        .select('full_name, email')
         .eq('id', user.id)
         .single();
 
       if (profile) {
         setFormData({
-          name: profile.nombre || '',
+          name: profile.full_name || '',
           email: profile.email || '',
           phone: ''
         });
       }
 
       const { data: evento, error: evErr } = await supabase
-        .from('evento')
-        .select('*, tipo_boleto(*)')
+        .from('events')
+        .select('*, ticket_types(*)')
         .eq('id', eventId)
         .single();
 
@@ -276,14 +276,14 @@ function CheckoutPageContent() {
         setSelectedSeats([]);
         setHoldToken('');
       } else {
-        let unit = Number(searchParams.get('price')) || Number(evento.precio_base) || 800;
+        let unit = Number(searchParams.get('price')) || Number(evento.price_base) || 800;
         let zoneName = typeParam;
-        const byId = evento.tipo_boleto?.find((t: { id: string }) => t.id === tipoBoletoIdParam);
-        const byName = evento.tipo_boleto?.find((t: { nombre: string }) => t.nombre === typeParam);
+        const byId = evento.ticket_types?.find((t: { id: string }) => t.id === tipoBoletoIdParam);
+        const byName = evento.ticket_types?.find((t: { name: string }) => t.name === typeParam);
         const matched = byId || byName;
         if (matched) {
-          unit = Number(matched.precio);
-          zoneName = matched.nombre;
+          unit = Number(matched.price);
+          zoneName = matched.name;
         }
         setFlowStep('checkout');
         setSelectedSeats(

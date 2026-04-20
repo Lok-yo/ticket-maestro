@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Verificar Rol
-    const { data: usuarioDb } = await supabaseUsuario.from('usuario').select('rol').eq('id', user.id).single();
+    const { data: usuarioDb } = await supabaseUsuario.from('profiles').select('rol').eq('id', user.id).single();
     if (usuarioDb?.rol !== 'admin') {
       return NextResponse.json({ error: 'No tienes privilegios de Administrador.' }, { status: 403 });
     }
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     );
 
     const { data: usuarios, error } = await supabaseAdmin
-      .from('usuario')
+      .from('profiles')
       .select('id, nombre, email, rol, fecha_registro')
       .order('fecha_registro', { ascending: false });
 
@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // 2. Verificar Rol
-    const { data: usuarioDb } = await supabaseUsuario.from('usuario').select('rol').eq('id', user.id).single();
+    const { data: usuarioDb } = await supabaseUsuario.from('profiles').select('rol').eq('id', user.id).single();
     if (usuarioDb?.rol !== 'admin') {
       return NextResponse.json({ error: 'Acción bloqueada. Se requiere rol "admin".' }, { status: 403 });
     }
@@ -72,7 +72,7 @@ export async function PUT(request: NextRequest) {
     );
 
     const { data, error } = await supabaseAdmin
-      .from('usuario')
+      .from('profiles')
       .update({ rol: newRole })
       .eq('id', targetUserId)
       .select()
@@ -86,3 +86,4 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: error.message || 'Error interno' }, { status: 500 });
   }
 }
+

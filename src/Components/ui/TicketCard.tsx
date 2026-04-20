@@ -202,3 +202,4 @@ export function TicketCard({ ticketData }: TicketCardProps) {
     </div>
   );
 }
+

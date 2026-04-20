@@ -68,3 +68,4 @@ export function Timer({ initialMinutes = 10, onExpire, eventKey = 'default' }: T
     </div>
   );
 }
+

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import type { ApiResponse, Usuario } from '@/types'
+import type { ApiResponse, Profile } from '@/types'
 
 // GET /api/auth/me — devuelve el usuario actual
 export async function GET(request: NextRequest) {
@@ -19,8 +19,8 @@ export async function GET(request: NextRequest) {
 
     // Obtener datos completos del usuario
     const { data: usuario, error: usuarioError } = await supabase
-      .from('usuario')
-      .select('id, nombre, email, rol, fecha_registro')
+      .from('profiles')
+      .select('id, full_name, role, created_at')
       .eq('id', user.id)
       .single()
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    return NextResponse.json<ApiResponse<Partial<Usuario>>>(
+    return NextResponse.json<ApiResponse<Partial<Profile>>>(
       {
         data: usuario,
         message: 'Usuario obtenido correctamente',

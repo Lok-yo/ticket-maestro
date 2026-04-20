@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { updateEventSchema } from '@/lib/schemas/event.schema'
-import type { ApiResponse, Evento } from '@/types'
+import type { ApiResponse, Event } from '@/types'
 import { VENUE_SEAT_STOCKS } from '@/lib/seatCategories'
 import { createSeatsIoEventForTicketEvent, getSeatsIoVenueChartKey } from '@/lib/seatsioServer'
 
@@ -24,8 +24,8 @@ export async function PUT(
     }
 
     // 2. Verificar perfil real
-    const { data: usuarioDb } = await supabase.from('usuario').select('rol').eq('id', user.id).single();
-    const role = usuarioDb?.rol;
+    const { data: usuarioDb } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const role = usuarioDb?.role;
 
     if (role !== 'organizador' && role !== 'admin') {
       return NextResponse.json<ApiResponse<null>>(
@@ -36,8 +36,8 @@ export async function PUT(
 
     // 3. Verificar que el evento exista y sea PROPIEDAD de este usuario (A menos que sea admin)
     const { data: eventoOriginal, error: fetchError } = await supabase
-       .from('evento')
-       .select('organizador_id, seats_evento_key, titulo, fecha')
+       .from('events')
+       .select('organizer_id, seats_evento_key, title, date')
        .eq('id', eventoId)
        .single();
 
@@ -48,7 +48,7 @@ export async function PUT(
         )
     }
 
-    if (role !== 'admin' && eventoOriginal.organizador_id !== user.id) {
+    if (role !== 'admin' && eventoOriginal.organizer_id !== user.id) {
         return NextResponse.json<ApiResponse<null>>(
             { error: 'No tienes permiso para editar un evento que no creaste.' },
             { status: 403 }
@@ -109,11 +109,15 @@ export async function PUT(
     }
 
     const { data, error } = await supabase
-      .from('evento')
+      .from('events')
       .update({
-          ...updatePayload,
-          // Convertir campos vacíos de imagen a null limpio si llega como string vacío literal
-          imagen: updatePayload.imagen || null
+          title: updatePayload.titulo,
+          description: updatePayload.descripcion,
+          location: updatePayload.ubicacion,
+          date: updatePayload.fecha,
+          capacity: updatePayload.capacidad,
+          category_id: updatePayload.categoria_id,
+          image_url: updatePayload.imagen || null
       })
       .eq('id', eventoId)
       .select()
@@ -123,22 +127,22 @@ export async function PUT(
 
     // Actualizar tipos de boleto si se proporcionaron
     if (tipos_boleto && tipos_boleto.length > 0) {
-      // Obtener los tipos actuales para preservar el stock_disponible
+      // Obtener los tipos actuales para preservar el available_stock
       const { data: tiposActuales } = await supabase
-        .from('tipo_boleto')
+        .from('ticket_types')
         .select('*')
-        .eq('evento_id', eventoId);
+        .eq('event_id', eventoId);
 
       // Borrar los tipos existentes y reinsertar con la nueva configuración
       await supabase
-        .from('tipo_boleto')
+        .from('ticket_types')
         .delete()
-        .eq('evento_id', eventoId);
+        .eq('event_id', eventoId);
 
       const tiposToInsert = tipos_boleto.map(tipo => {
-        const tipoExistente = tiposActuales?.find(t => t.nombre === tipo.nombre)
+        const tipoExistente = tiposActuales?.find(t => t.name === tipo.nombre)
         const vendidos = tipoExistente
-          ? tipoExistente.stock_total - tipoExistente.stock_disponible
+          ? tipoExistente.total_stock - tipoExistente.available_stock
           : 0
 
         const venueTotal =
@@ -147,18 +151,18 @@ export async function PUT(
             : tipo.stock_total
 
         return {
-          evento_id: eventoId,
-          nombre: tipo.nombre,
-          precio: tipo.precio,
-          stock_total: venueTotal,
-          stock_disponible: Math.max(0, venueTotal - vendidos),
-          descripcion: tipo.descripcion || null,
-          max_por_compra: tipo.max_por_compra || 10,
+          event_id: eventoId,
+          name: tipo.nombre,
+          price: tipo.precio,
+          total_stock: venueTotal,
+          available_stock: Math.max(0, venueTotal - vendidos),
+          description: tipo.descripcion || null,
+          max_per_order: tipo.max_por_compra || 10,
         }
       })
 
       const { error: tiposError } = await supabase
-        .from('tipo_boleto')
+        .from('ticket_types')
         .insert(tiposToInsert);
 
       if (tiposError) {
@@ -169,8 +173,8 @@ export async function PUT(
     if (usarMapaSeats && !alreadyHasSeatsMap) {
       const secret = process.env.SEATS_IO_SECRET_KEY!
       const chartKey = getSeatsIoVenueChartKey()!
-      const tituloEvt = (updatePayload as { titulo?: string }).titulo ?? data.titulo
-      const fechaRaw = (updatePayload as { fecha?: string }).fecha ?? data.fecha
+      const tituloEvt = (updatePayload as { titulo?: string }).titulo ?? data.title
+      const fechaRaw = (updatePayload as { fecha?: string }).fecha ?? data.date
       const fechaStr =
         fechaRaw && !Number.isNaN(Date.parse(String(fechaRaw)))
           ? new Date(String(fechaRaw)).toISOString().slice(0, 10)
@@ -184,7 +188,7 @@ export async function PUT(
           date: fechaStr,
         })
         const { error: seatUpdErr } = await supabase
-          .from('evento')
+          .from('events')
           .update({ seats_chart_key: chartKey, seats_evento_key: eventoId })
           .eq('id', eventoId)
         if (seatUpdErr) throw seatUpdErr

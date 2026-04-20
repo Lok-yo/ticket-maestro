@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import type { ApiResponse, Usuario } from '@/types'
+import type { ApiResponse, Profile } from '@/types'
 
 const registerSchema = z.object({
   nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  rol: z.enum(['admin', 'cliente']).default('cliente'),
+  rol: z.enum(['admin', 'customer']).default('customer'),
 })
 
 export async function POST(request: NextRequest) {
@@ -36,8 +36,8 @@ export async function POST(request: NextRequest) {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // ¡Este es el truco!
-      user_metadata: { nombre, rol },
+      email_confirm: true,
+      user_metadata: { full_name: nombre, role: rol },
     })
 
     if (authError) {
@@ -54,22 +54,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ✅ Incluir password en el insert para cumplir el constraint de la tabla
     const { error: usuarioError } = await supabase
-      .from('usuario')
+      .from('profiles')
       .insert({
         id: authData.user.id,
-        nombre,
-        email,
-        password,
-        rol,
-        fecha_registro: new Date().toISOString(),
+        full_name: nombre,
+        role: rol,
       })
-      .select()
-      .single()
 
     if (usuarioError) {
-      console.error('Error creando usuario en BD:', usuarioError)
+      console.error('Error creando perfil en BD:', usuarioError)
     }
 
     // Auto-login después del registro
@@ -79,18 +73,18 @@ export async function POST(request: NextRequest) {
     })
 
     if (loginError || !loginData.session) {
-      return NextResponse.json<ApiResponse<Partial<Usuario>>>(
+      return NextResponse.json<ApiResponse<Partial<Profile>>>(
         {
-          data: { id: authData.user.id, nombre, email, rol },
+          data: { id: authData.user.id, full_name: nombre, role: rol },
           message: 'Usuario creado correctamente, pero hubo un error al auto-iniciar sesión.',
         },
         { status: 201 }
       )
     }
 
-    return NextResponse.json<ApiResponse<Partial<Usuario>>>(
+    return NextResponse.json<ApiResponse<Partial<Profile>>>(
       {
-        data: { id: authData.user.id, nombre, email, rol },
+        data: { id: authData.user.id, full_name: nombre, role: rol },
         message: 'Usuario creado e sesión iniciada correctamente',
       },
       { status: 201 }

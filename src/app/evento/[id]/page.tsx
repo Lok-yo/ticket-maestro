@@ -6,13 +6,13 @@ import Image from 'next/image';
 import { Calendar, MapPin, Users, Info, ChevronLeft, AlertTriangle } from 'lucide-react';
 import Navbar from '@/Components/layout/Navbar';
 import { createClient } from '@/lib/supabase/client';
-import type { TipoBoleto } from '@/types';
+import type { TicketType, Event } from '@/types';
 
-// Fallback: Función para generar tipos de boletos cuando no hay tipo_boleto en BD
-const getTicketTypesFallback = (basePrice: number, capacidad: number) => [
-  { id: 'general-fallback', nombre: 'General', precio: basePrice, stock_disponible: capacidad, max_por_compra: 10, descripcion: 'Acceso a zona general.' },
-  { id: 'preferente-fallback', nombre: 'Preferente', precio: Math.round(basePrice * 1.5), stock_disponible: Math.floor(capacidad * 0.3), max_por_compra: 5, descripcion: 'Mejor vista y acceso preferencial.' },
-  { id: 'vip-fallback', nombre: 'VIP', precio: Math.round(basePrice * 2.5), stock_disponible: Math.floor(capacidad * 0.1), max_por_compra: 2, descripcion: 'Acceso exclusivo y amenidades VIP.' },
+// Fallback: Función para generar tipos de boletos cuando no hay ticket_types en BD
+const getTicketTypesFallback = (basePrice: number, capacidad: number): Partial<TicketType>[] => [
+  { id: 'general-fallback', name: 'General', price: basePrice, available_stock: capacidad, max_per_order: 10, description: 'Acceso a zona general.' },
+  { id: 'preferente-fallback', name: 'Preferente', price: Math.round(basePrice * 1.5), available_stock: Math.floor(capacidad * 0.3), max_per_order: 5, description: 'Mejor vista y acceso preferencial.' },
+  { id: 'vip-fallback', name: 'VIP', price: Math.round(basePrice * 2.5), available_stock: Math.floor(capacidad * 0.1), max_per_order: 2, description: 'Acceso exclusivo y amenidades VIP.' },
 ];
 
 export default function EventDetailPage() {
@@ -20,7 +20,7 @@ export default function EventDetailPage() {
   const params = useParams();
   const eventId = params.id as string;
   
-  const [eventData, setEventData] = useState<any>(null);
+  const [eventData, setEventData] = useState<Event | null>(null);
   const [ticketTypes, setTicketTypes] = useState<any[]>([]);
   const [selectedType, setSelectedType] = useState<any>(null);
   
@@ -32,29 +32,29 @@ export default function EventDetailPage() {
       const supabase = createClient();
       try {
           const { data, error } = await supabase
-            .from('evento')
-            .select('*, tipo_boleto(*)')
+            .from('events')
+            .select('*, ticket_types(*)')
             .eq('id', eventId)
             .single();
           
           if (data && !error) {
-              setEventData(data);
+              setEventData(data as Event);
               
-              if (data.tipo_boleto && data.tipo_boleto.length > 0) {
-                const tipos = data.tipo_boleto.map((t: TipoBoleto) => ({
+              if (data.ticket_types && data.ticket_types.length > 0) {
+                const tipos = data.ticket_types.map((t: TicketType) => ({
                   id: t.id,
-                  nombre: t.nombre,
-                  precio: Number(t.precio),
-                  stock_disponible: t.stock_disponible,
-                  stock_total: t.stock_total,
-                  max_por_compra: t.max_por_compra || 10,
-                  descripcion: t.descripcion || '',
+                  nombre: t.name,
+                  precio: Number(t.price),
+                  stock_disponible: t.available_stock,
+                  stock_total: t.total_stock,
+                  max_por_compra: t.max_per_order || 10,
+                  descripcion: t.description || '',
                   isFallback: false,
                 }));
                 setTicketTypes(tipos);
                 setSelectedType(tipos[0]);
               } else {
-                const fallback = getTicketTypesFallback(data.precio_base || 800, data.capacidad || 1000);
+                const fallback = getTicketTypesFallback(800, data.capacity || 1000);
                 setTicketTypes(fallback);
                 setSelectedType(fallback[0]);
               }
@@ -72,17 +72,17 @@ export default function EventDetailPage() {
 
   // === FUNCIÓN ACTUALIZADA CON SEATS.IO ===
   const handleBuy = () => {
-    if (!selectedType || selectedType.stock_disponible <= 0) return;
+    if (!selectedType || (selectedType.stock_disponible || selectedType.available_stock) <= 0) return;
 
     const searchParams = new URLSearchParams({
-      type: selectedType.nombre,
-      price: selectedType.precio.toString(),
+      type: selectedType.nombre || selectedType.name,
+      price: (selectedType.precio || selectedType.price).toString(),
       qty: quantity.toString(),
-      eventTitle: eventData?.titulo || '',
+      eventTitle: eventData?.title || '',
       tipoBoletoId: selectedType.isFallback === false ? selectedType.id : '',
     });
-    if (eventData?.seats_evento_key) {
-      searchParams.set('seatsEventKey', eventData.seats_evento_key);
+    if (eventData?.seats_event_key) {
+      searchParams.set('seatsEventKey', eventData.seats_event_key);
     }
 
     router.push(`/checkout/${eventId}?${searchParams.toString()}`);
@@ -98,9 +98,9 @@ export default function EventDetailPage() {
 
   if (!eventData) return null;
 
-  const totalDisponible = ticketTypes.reduce((acc, t) => acc + (t.stock_disponible || 0), 0);
+  const totalDisponible = ticketTypes.reduce((acc, t) => acc + (t.stock_disponible || t.available_stock || 0), 0);
   const allSoldOut = totalDisponible <= 0;
-  const selectedSoldOut = selectedType ? selectedType.stock_disponible <= 0 : true;
+  const selectedSoldOut = selectedType ? (selectedType.stock_disponible || selectedType.available_stock) <= 0 : true;
 
   return (
     <div className="min-h-screen bg-[#1a1625] text-white">
@@ -111,8 +111,8 @@ export default function EventDetailPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-[#1a1625] via-black/50 to-transparent z-10" />
         
         <img
-          src={eventData.imagen || `https://picsum.photos/seed/${eventId}/1200/600`}
-          alt={eventData.titulo}
+          src={eventData.image_url || `https://picsum.photos/seed/${eventId}/1200/600`}
+          alt={eventData.title}
           className="absolute inset-0 w-full h-full object-cover"
         />
 
@@ -130,21 +130,21 @@ export default function EventDetailPage() {
                 Conciertos
               </span>
               <h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight">
-                {eventData.titulo}
+                {eventData.title}
               </h1>
               
               <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 text-white/80">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-pink-500" />
                   <span>
-                    {new Date(eventData.fecha).toLocaleDateString('es-MX', {
+                    {new Date(eventData.date).toLocaleDateString('es-MX', {
                         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
                     })}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-pink-500" />
-                  <span>{eventData.ubicacion}</span>
+                  <span>{eventData.location}</span>
                 </div>
               </div>
             </div>
@@ -163,7 +163,7 @@ export default function EventDetailPage() {
                 <Info className="w-6 h-6 text-pink-500"/> Acerca del Evento
             </h2>
             <p className="text-gray-300 leading-relaxed text-lg">
-              {eventData.descripcion}
+              {eventData.description}
             </p>
           </div>
 
@@ -173,19 +173,21 @@ export default function EventDetailPage() {
              </h3>
              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                {ticketTypes.map((type) => {
-                 const porcentaje = type.stock_total 
-                   ? Math.round(((type.stock_total - type.stock_disponible) / type.stock_total) * 100)
+                 const total = type.stock_total || type.total_stock || 100;
+                 const disponible = type.stock_disponible || type.available_stock || 0;
+                 const porcentaje = total 
+                   ? Math.round(((total - disponible) / total) * 100)
                    : 0;
-                 const agotado = type.stock_disponible <= 0;
+                 const agotado = disponible <= 0;
                  
                  return (
                    <div key={type.id} className={`bg-white/5 rounded-2xl p-4 border ${agotado ? 'border-red-500/30' : 'border-white/10'}`}>
                      <div className="flex justify-between items-center mb-2">
-                       <span className="font-bold text-sm">{type.nombre}</span>
+                       <span className="font-bold text-sm">{type.nombre || type.name}</span>
                        {agotado ? (
                          <span className="text-xs text-red-400 font-bold">AGOTADO</span>
                        ) : (
-                         <span className="text-xs text-green-400 font-bold">{type.stock_disponible} disponibles</span>
+                         <span className="text-xs text-green-400 font-bold">{disponible} disponibles</span>
                        )}
                      </div>
                      <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
@@ -213,7 +215,8 @@ export default function EventDetailPage() {
             {/* Ticket Types */}
             <div className="space-y-4 mb-8">
               {ticketTypes.map((type) => {
-                const agotado = type.stock_disponible <= 0;
+                const disponible = type.stock_disponible || type.available_stock || 0;
+                const agotado = disponible <= 0;
                 return (
                   <button
                     key={type.id}
@@ -234,17 +237,17 @@ export default function EventDetailPage() {
                   >
                     <div className="flex justify-between items-center mb-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-lg">{type.nombre}</span>
+                        <span className="font-bold text-lg">{type.nombre || type.name}</span>
                         {agotado && (
                           <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-bold">AGOTADO</span>
                         )}
                       </div>
-                      <span className="font-bold text-pink-400">${Number(type.precio).toLocaleString()} MXN</span>
+                      <span className="font-bold text-pink-400">${Number(type.precio || type.price).toLocaleString()} MXN</span>
                     </div>
-                    <p className="text-xs text-gray-400 leading-tight">{type.descripcion}</p>
+                    <p className="text-xs text-gray-400 leading-tight">{type.descripcion || type.description}</p>
                     {!agotado && (
                       <p className="text-xs text-gray-500 mt-1">
-                        {type.stock_disponible} disponibles
+                        {disponible} disponibles
                       </p>
                     )}
                   </button>

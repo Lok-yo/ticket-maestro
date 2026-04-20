@@ -48,3 +48,4 @@ export default function DeleteEventButton({ eventId, eventTitle }: { eventId: st
        </button>
    );
 }
+

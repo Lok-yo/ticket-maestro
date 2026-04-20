@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 
     // Verify if ticket exists
     const { data: ticket, error } = await supabaseAdmin
-      .from('boleto')
+      .from('tickets')
       .select('*, evento(titulo)')
       .eq('id', ticketId)
       .single();
@@ -99,3 +99,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

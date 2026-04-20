@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     // Verificar que el evento existe y está publicado
     const { data: evento, error: eventoError } = await supabase
-      .from('evento')
+      .from('events')
       .select('*')
       .eq('id', evento_id)
       .eq('estado', 'activo')
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     // Verificar capacidad disponible
     const { count: boletosVendidos } = await supabase
-      .from('boleto')
+      .from('tickets')
       .select('*', { count: 'exact', head: true })
       .eq('evento_id', evento_id)
       .in('estado', ['vendido', 'reservado'])
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     // Crear la orden
     const { data: orden, error: ordenError } = await supabase
-      .from('orden')
+      .from('orders')
       .insert({
         usuario_id: user.id,
         total: comision.total,
@@ -104,19 +104,19 @@ export async function POST(request: NextRequest) {
     }))
 
     const { data: boletos, error: boletosError } = await supabase
-      .from('boleto')
+      .from('tickets')
       .insert(boletosData)
       .select()
 
     if (boletosError || !boletos) {
       // Revertir orden si fallan los boletos
-      await supabase.from('orden').delete().eq('id', orden.id)
+      await supabase.from('orders').delete().eq('id', orden.id)
       throw new Error('Error al crear los boletos')
     }
 
     // Crear registro de pago
     const { data: pago, error: pagoError } = await supabase
-      .from('pago')
+      .from('payments')
       .insert({
         orden_id: orden.id,
         metodo: 'tarjeta',
@@ -134,8 +134,8 @@ export async function POST(request: NextRequest) {
 
     if (pagoError || !pago) {
       // Revertir todo si falla el pago
-      await supabase.from('boleto').delete().in('id', boletos.map(b => b.id))
-      await supabase.from('orden').delete().eq('id', orden.id)
+      await supabase.from('tickets').delete().in('id', boletos.map(b => b.id))
+      await supabase.from('orders').delete().eq('id', orden.id)
       throw new Error('Error al crear el registro de pago')
     }
 

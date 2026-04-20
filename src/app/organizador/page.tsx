@@ -21,7 +21,7 @@ export default async function OrganizadorPage() {
 
   // Obtener perfil para verificar rol (doble tranca de seguridad)
   const { data: usuarioData } = await supabase
-    .from('usuario')
+    .from('profiles')
     .select('*')
     .eq('id', authUser.id)
     .single();
@@ -30,7 +30,7 @@ export default async function OrganizadorPage() {
 
   // Verificar si es staff en algun evento
   const { data: staffEventos } = await supabase
-    .from('evento_staff')
+    .from('event_staff')
     .select('evento_id, puede_validar, puede_ver_reportes')
     .eq('usuario_id', user.id);
 
@@ -48,7 +48,7 @@ export default async function OrganizadorPage() {
 
   if (isMainOrganizer) {
     const { data: eventosPropios } = await supabase
-      .from('evento')
+      .from('events')
       .select('*, categoria(nombre), tipo_boleto(*)')
       .eq('organizador_id', user.id)
       .order('fecha', { ascending: false });
@@ -59,7 +59,7 @@ export default async function OrganizadorPage() {
   // Sumar eventos donde es staff
   if (staffEventIds.length > 0) {
     const { data: eventosAsignados } = await supabase
-      .from('evento')
+      .from('events')
       .select('*, categoria(nombre), tipo_boleto(*)')
       .in('id', staffEventIds)
       .order('fecha', { ascending: false });
@@ -78,7 +78,7 @@ export default async function OrganizadorPage() {
 
   if (isMainOrganizer) {
     const { data: balanceData } = await supabase
-      .from('balance_organizador')
+      .from('profiles')
       .select('*')
       .eq('organizador_id', user.id)
       .single();
@@ -224,3 +224,4 @@ export default async function OrganizadorPage() {
     </div>
   );
 }
+

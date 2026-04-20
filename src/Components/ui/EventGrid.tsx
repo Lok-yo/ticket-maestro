@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
-import type { Evento } from '@/types';
+import type { Event } from '@/types';
 
 // Skeleton de un evento
 function EventSkeleton() {
@@ -28,7 +28,7 @@ interface Props {
 }
 
 export default function EventGrid({ searchTerm = '', ubicacion = '', fecha = '', fechaFin = '' }: Props) {
-  const [eventos, setEventos] = useState<Evento[]>([]);
+  const [eventos, setEventos] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -39,23 +39,23 @@ export default function EventGrid({ searchTerm = '', ubicacion = '', fecha = '',
         const supabase = createClient();
         
         let query = supabase
-          .from('evento')
-          .select('*, categoria(*)')
-          .eq('estado', 'activo')
-          .order('fecha', { ascending: true })
+          .from('events')
+          .select('*, category:categories(*)')
+          .eq('status', 'published')
+          .order('date', { ascending: true })
           .range(0, 20); // Limitamos a 20 por ahora
 
         if (searchTerm) {
-          query = query.ilike('titulo', `%${searchTerm}%`);
+          query = query.ilike('title', `%${searchTerm}%`);
         }
         if (ubicacion) {
-          query = query.ilike('ubicacion', `%${ubicacion}%`);
+          query = query.ilike('location', `%${ubicacion}%`);
         }
         if (fecha) {
-          query = query.gte('fecha', fecha);
+          query = query.gte('date', fecha);
         }
         if (fechaFin) {
-          query = query.lte('fecha', fechaFin);
+          query = query.lte('date', fechaFin);
         }
 
         const { data, error } = await query;
@@ -107,8 +107,8 @@ export default function EventGrid({ searchTerm = '', ubicacion = '', fecha = '',
             >
               <div className="relative h-56 bg-zinc-800">
                 <Image
-                  src={evento.imagen || `https://picsum.photos/seed/${evento.id}/600/400`}
-                  alt={evento.titulo}
+                  src={evento.image_url || `https://picsum.photos/seed/${evento.id}/600/400`}
+                  alt={evento.title}
                   fill
                   quality={60}
                   sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 25vw"
@@ -117,10 +117,10 @@ export default function EventGrid({ searchTerm = '', ubicacion = '', fecha = '',
                 />
               </div>
               <div className="p-5">
-                <h3 className="font-bold text-xl mb-2 line-clamp-2">{evento.titulo}</h3>
-                <p className="text-pink-400 text-sm mb-1">{evento.ubicacion}</p>
+                <h3 className="font-bold text-xl mb-2 line-clamp-2">{evento.title}</h3>
+                <p className="text-pink-400 text-sm mb-1">{evento.location}</p>
                 <p className="text-xs text-gray-400">
-                  {new Date(evento.fecha).toLocaleDateString('es-MX', {
+                  {new Date(evento.date).toLocaleDateString('es-MX', {
                     weekday: 'long',
                     day: 'numeric',
                     month: 'long',
@@ -135,3 +135,4 @@ export default function EventGrid({ searchTerm = '', ubicacion = '', fecha = '',
     </section>
   );
 }
+

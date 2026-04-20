@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
-import type { ApiResponse, Usuario } from '@/types';
+import type { ApiResponse, Profile } from '@/types';
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -39,29 +39,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Buscar usuario en la tabla "usuario"
+    // Buscar usuario en la tabla "profiles"
     let { data: usuario } = await supabase
-      .from('usuario')
-      .select('id, nombre, email, rol, fecha_registro')
+      .from('profiles')
+      .select('id, full_name, role, created_at')
       .eq('id', authData.user.id)
       .single();
 
     // ✅ Si no existe en la tabla (por confirmación de email pendiente),
     // lo creamos automáticamente con los datos de Supabase Auth
     if (!usuario) {
-      const nombre = authData.user.user_metadata?.nombre || email.split('@')[0];
-      const rol = authData.user.user_metadata?.rol || 'cliente';
+      const nombre = authData.user.user_metadata?.full_name || authData.user.user_metadata?.nombre || email.split('@')[0];
+      const rol = authData.user.user_metadata?.role || authData.user.user_metadata?.rol || 'customer';
 
       const { data: nuevoUsuario } = await supabase
-        .from('usuario')
+        .from('profiles')
         .insert({
           id: authData.user.id,
-          nombre,
-          email,
-          rol,
-          fecha_registro: new Date().toISOString(),
+          full_name: nombre,
+          role: rol,
         })
-        .select('id, nombre, email, rol, fecha_registro')
+        .select('id, full_name, role, created_at')
         .single();
 
       usuario = nuevoUsuario;
@@ -74,7 +72,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json<ApiResponse<Usuario>>(
+    return NextResponse.json<ApiResponse<Profile>>(
       {
         data: usuario,
         message: 'Sesión iniciada correctamente',
