@@ -101,7 +101,7 @@ function SuccessPageContent() {
                   onClick={handlePrint}
                   className="bg-white text-black px-6 py-3 rounded-full font-bold flex items-center gap-2 hover:bg-gray-200 transition"
                >
-                   <Download className="w-5 h-5"/> Descargar Boletos (PDF)
+                   <Download className="w-5 h-5"/> Descargar Boletos
                </button>
                <button 
                   onClick={() => router.push('/')}
