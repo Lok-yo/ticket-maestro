@@ -112,7 +112,9 @@ export async function GET(
           .in('orden_id', paidOrderIds)
           .eq('estado', ADMIN_VALID_PAYMENT_STATUS)
 
-        const ventaReal = (pagosEvento || []).reduce((acc, p) => acc + toNumberSafe(p.monto_neto) + toNumberSafe(p.monto_retenido), 0)
+        const ventaReal = (pagosEvento || [])
+          .filter((p) => !p.fecha_dispersion)
+          .reduce((acc, p) => acc + toNumberSafe(p.monto_neto) + toNumberSafe(p.monto_retenido), 0)
         const netoPendiente = (pagosEvento || [])
           .filter((p) => !p.fecha_dispersion)
           .reduce((acc, p) => acc + toNumberSafe(p.monto_neto), 0)
