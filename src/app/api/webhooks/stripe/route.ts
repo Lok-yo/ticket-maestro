@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { generateQRPayload } from '@/lib/utils/generateSecureQR'
 import { verifyStripeWebhook } from '@/lib/stripe'
 
 const REGION = 'na'; // Región que estás usando
@@ -31,10 +30,10 @@ async function bookSeatsInSeatsIo(seatIds: string[], holdToken: string, seatsEve
     });
 
     if (bookRes.ok) {
-      console.log(`✓ Asientos confirmados como vendidos en seats.io: ${seatIds.join(', ')}`);
+      console.log(`✓ Asientos confirmados en seats.io: ${seatIds.join(', ')}`);
     } else {
       const err = await bookRes.text();
-      console.error('Error al book seats en seats.io:', err);
+      console.error('Error al confirmar asientos en seats.io:', err);
     }
   } catch (err) {
     console.error('Error en llamada a seats.io (book):', err);
@@ -88,17 +87,15 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
 
     switch (event.type) {
-      // Pago completado exitosamente
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object
-        const ordenId = paymentIntent.metadata?.orden_id
+        const ordenId = paymentIntent.metadata?.order_id
 
         if (!ordenId) {
-          console.error('No se encontró orden_id en metadata')
+          console.error('No se encontró order_id en metadata')
           break
         }
 
-        // === NUEVO: EXTRAER DATOS DE SEATS.IO DEL METADATA ===
         const seatIdsRaw = paymentIntent.metadata?.seat_ids;
         const holdToken = paymentIntent.metadata?.hold_token;
         const seatsEventKey = paymentIntent.metadata?.seats_event_key;
@@ -112,134 +109,78 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Actualizar estado del pago
-        const { error: pagoError } = await supabase
-          .from('pago')
-          .update({
-            estado: 'exitoso',
-            referencia: paymentIntent.id,
-          })
-          .eq('orden_id', ordenId)
-
-        if (pagoError) {
-          console.error('Error actualizando pago:', pagoError)
-        }
-
-        // Actualizar estado de la orden
+        // 1. Actualizar Pago
         await supabase
-          .from('orden')
-          .update({ estado: 'pagada' })
+          .from('payments')
+          .update({
+            status: 'successful',
+            provider_payment_id: paymentIntent.id,
+          })
+          .eq('order_id', ordenId)
+
+        // 2. Actualizar Orden
+        await supabase
+          .from('orders')
+          .update({ status: 'pagada' })
           .eq('id', ordenId)
 
-        // Obtener boletos de la orden
-        const { data: orden, error: ordenErr } = await supabase
-          .from('orden')
-          .select('*, boleto(*, evento(*))')
-          .eq('id', ordenId)
-          .single()
-
-        if (ordenErr) console.error('Error al obtener orden:', ordenErr)
-        if (!orden?.boleto || orden.boleto.length === 0) {
-          console.error('Orden no tiene boletos.')
-          break
-        }
-
-        const primerBoleto = orden.boleto[0];
-        const eventoDelBoleto = Array.isArray(primerBoleto.evento) 
-          ? primerBoleto.evento[0] 
-          : primerBoleto.evento;
-        const organizadorId = eventoDelBoleto?.organizador_id;
-
-        // === NUEVO: CONFIRMAR ASIENTOS EN SEATS.IO ===
+        // 3. Confirmar Asientos en Seats.io
         if (seatIds.length > 0 && holdToken && seatsEventKey) {
           await bookSeatsInSeatsIo(seatIds, holdToken, seatsEventKey);
-
-          // Actualizar tabla asiento en Supabase
-          const eventoIdMeta = primerBoleto?.evento_id as string | undefined;
-          if (eventoIdMeta) {
-            await supabase
-              .from('asiento')
-              .update({
-                estado: 'vendido',
-                hold_token: null,
-              })
-              .eq('evento_id', eventoIdMeta)
-              .in('seats_object_id', seatIds);
-          } else {
-            await supabase
-              .from('asiento')
-              .update({
-                estado: 'vendido',
-                hold_token: null,
-              })
-              .in('seats_object_id', seatIds);
-          }
         }
 
-        // Calcular montos para actualizar balance del organizador
+        // 4. Actualizar Balance del Organizador
         const { data: pagoRegistrado } = await supabase
-          .from('pago')
-          .select('monto_neto, monto_retenido')
-          .eq('orden_id', ordenId)
+          .from('payments')
+          .select('retained_amount, available_to_organizer')
+          .eq('order_id', ordenId)
           .single();
-          
-        const montoNeto = Number(pagoRegistrado?.monto_neto || 0);
-        const montoRetenido = Number(pagoRegistrado?.monto_retenido || 0);
-        const totalVentaOrganizador = montoNeto + montoRetenido;
 
-        if (organizadorId && totalVentaOrganizador > 0) {
+        const { data: orden } = await supabase
+          .from('orders')
+          .select('events(organizador_id)')
+          .eq('id', ordenId)
+          .single();
+
+        const organizadorId = Array.isArray(orden?.events) ? orden?.events[0]?.organizador_id : orden?.events?.organizador_id;
+
+        if (pagoRegistrado && organizadorId) {
+          const available = Number(pagoRegistrado.available_to_organizer) || 0;
+          const retained = Number(pagoRegistrado.retained_amount) || 0;
+          const totalEarned = available + retained;
+
           const { data: balanceActual } = await supabase
-            .from('balance_organizador')
+            .from('organizer_balances')
             .select('*')
-            .eq('organizador_id', organizadorId)
+            .eq('organizer_id', organizadorId)
             .single();
 
           if (balanceActual) {
-            await supabase.from('balance_organizador').update({
-              saldo_disponible: Number(balanceActual.saldo_disponible) + totalVentaOrganizador,
-              total_ganado: Number(balanceActual.total_ganado) + totalVentaOrganizador,
-              ultima_actualizacion: new Date().toISOString()
-            }).eq('organizador_id', organizadorId);
+            await supabase.from('organizer_balances').update({
+              available_balance: Number(balanceActual.available_balance) + available,
+              retained_balance: Number(balanceActual.retained_balance) + retained,
+              total_earned: Number(balanceActual.total_earned) + totalEarned,
+              updated_at: new Date().toISOString()
+            }).eq('organizer_id', organizadorId);
           } else {
-            await supabase.from('balance_organizador').insert({
-              organizador_id: organizadorId,
-              saldo_disponible: totalVentaOrganizador,
-              total_ganado: totalVentaOrganizador
+            await supabase.from('organizer_balances').insert({
+              organizer_id: organizadorId,
+              available_balance: available,
+              retained_balance: retained,
+              total_earned: totalEarned
             });
           }
-        }
-
-        // Generar QR y marcar boletos como vendidos (tu lógica original)
-        for (const boleto of orden.boleto) {
-          const qrPayload = generateQRPayload(
-            boleto.id,
-            boleto.evento_id,
-            orden.usuario_id,
-            boleto.evento.fecha,
-          )
-
-          await supabase
-            .from('boleto')
-            .update({
-              estado: 'vendido',
-              codigo_qr: qrPayload,
-              fecha_emision: new Date().toISOString(),
-            })
-            .eq('id', boleto.id)
         }
 
         console.log(`✓ Pago completado para orden ${ordenId}`)
         break
       }
 
-      // Pago fallido
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object
-        const ordenId = paymentIntent.metadata?.orden_id
+        const ordenId = paymentIntent.metadata?.order_id
         const tipoBoletoId = paymentIntent.metadata?.tipo_boleto_id
-        const cantidad = parseInt(paymentIntent.metadata?.cantidad || '0', 10)
 
-        // === NUEVO: LIBERAR ASIENTOS EN SEATS.IO ===
         const seatIdsRaw = paymentIntent.metadata?.seat_ids;
         const holdToken = paymentIntent.metadata?.hold_token;
         const seatsEventKey = paymentIntent.metadata?.seats_event_key;
@@ -259,88 +200,34 @@ export async function POST(request: NextRequest) {
 
         if (!ordenId) break
 
-        // Marcar pago como fallido
-        await supabase
-          .from('pago')
-          .update({ estado: 'fallido' })
-          .eq('orden_id', ordenId)
-
-        // Marcar orden como cancelada
-        await supabase
-          .from('orden')
-          .update({ estado: 'cancelada' })
-          .eq('id', ordenId)
-
-        // Liberar boletos
-        await supabase
-          .from('boleto')
-          .update({ estado: 'disponible' })
-          .eq('orden_id', ordenId)
-          .eq('estado', 'reservado')
+        await supabase.from('payments').update({ status: 'failed' }).eq('order_id', ordenId)
+        await supabase.from('orders').update({ status: 'cancelada' }).eq('id', ordenId)
+        
+        // Cancelar tickets temporalmente creados
+        const { data: ticketsCanceled } = await supabase
+          .from('tickets')
+          .update({ status: 'cancelado' })
+          .eq('order_id', ordenId)
+          .select('id')
 
         // Restaurar stock del tipo de boleto
-        if (tipoBoletoId && cantidad > 0) {
+        if (tipoBoletoId && ticketsCanceled && ticketsCanceled.length > 0) {
+          const cantidad = ticketsCanceled.length;
           const { data: tipoBoleto } = await supabase
-            .from('tipo_boleto')
-            .select('stock_disponible')
+            .from('ticket_types')
+            .select('available_stock')
             .eq('id', tipoBoletoId)
             .single();
 
           if (tipoBoleto) {
             await supabase
-              .from('tipo_boleto')
-              .update({ stock_disponible: tipoBoleto.stock_disponible + cantidad })
+              .from('ticket_types')
+              .update({ available_stock: tipoBoleto.available_stock + cantidad })
               .eq('id', tipoBoletoId);
           }
         }
 
         console.log(`✗ Pago fallido para orden ${ordenId}`)
-        break
-      }
-
-      // Reembolso procesado (mantenemos tu lógica)
-      case 'charge.refunded': {
-        const charge = event.data.object
-        const ordenId = charge.metadata?.orden_id
-        const tipoBoletoId = charge.metadata?.tipo_boleto_id
-        const cantidad = parseInt(charge.metadata?.cantidad || '0', 10)
-
-        if (!ordenId) break
-
-        await supabase
-          .from('pago')
-          .update({ estado: 'fallido' })
-          .eq('orden_id', ordenId)
-
-        const { data: boletosOrden } = await supabase
-          .from('boleto')
-          .select('id')
-          .eq('orden_id', ordenId)
-          .eq('estado', 'vendido');
-
-        if (boletosOrden && boletosOrden.length > 0) {
-          await supabase
-            .from('boleto')
-            .update({ estado: 'disponible' })
-            .in('id', boletosOrden.map(b => b.id));
-        }
-
-        if (tipoBoletoId && cantidad > 0) {
-          const { data: tipoBoleto } = await supabase
-            .from('tipo_boleto')
-            .select('stock_disponible')
-            .eq('id', tipoBoletoId)
-            .single();
-
-          if (tipoBoleto) {
-            await supabase
-              .from('tipo_boleto')
-              .update({ stock_disponible: tipoBoleto.stock_disponible + cantidad })
-              .eq('id', tipoBoletoId);
-          }
-        }
-
-        console.log(`↩ Reembolso procesado para orden ${ordenId}`)
         break
       }
 
