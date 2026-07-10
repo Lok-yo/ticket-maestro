@@ -1,45 +1,47 @@
-# 🎟️ Ticket Maestro
+# Ticket Maestro
 
-**Ticket Maestro** es una plataforma web completa de venta y gestión de boletos para eventos en vivo. Permite a organizadores crear eventos con mapas de asientos interactivos, y a los asistentes comprar boletos de forma segura con pago por tarjeta.
+**Ticket Maestro** es una plataforma web completa de venta y gestion de boletos para eventos en vivo. Permite a organizadores crear eventos con mapas de asientos interactivos, y a los asistentes comprar boletos de forma segura con pago por tarjeta.
+
+Proyecto terminado el 20 de abril de 2026.
 
 ---
 
-## ✨ Características principales
+## Caracteristicas principales
 
 ### Para asistentes
-- 🔍 Búsqueda de eventos por nombre, ubicación y rango de fechas
-- 🪑 Selección de asientos interactiva con mapa visual (Seats.io)
-- 💳 Pago seguro con tarjeta de crédito/débito (Stripe)
-- 📱 Boletos digitales con código QR firmado y verificable
-- 📥 Descarga de boleto como imagen (PNG)
-- 🎫 Historial de compras en "Mis Boletos"
+- Busqueda de eventos por nombre, ubicacion y rango de fechas
+- Seleccion de asientos interactiva con mapa visual (Seats.io)
+- Pago seguro con tarjeta de credito/debito (Stripe)
+- Boletos digitales con codigo QR firmado y verificable
+- Descarga de boleto como imagen (PNG)
+- Historial de compras en "Mis Boletos"
 
 ### Para organizadores
-- 📋 Panel de gestión de eventos
-- 🗂️ Creación de tipos de boleto (General, Preferente, VIP) con stock y precio independientes
-- 📊 Reportes de ventas y asistencia en tiempo real
-- 📷 Escáner QR para validación de boletos en puerta
-- 👥 Gestión de staff con permisos de validación
+- Panel de gestion de eventos
+- Creacion de tipos de boleto (General, Preferente, VIP) con stock y precio independientes
+- Reportes de ventas y asistencia en tiempo real
+- Escaner QR para validacion de boletos en puerta
+- Gestion de staff con permisos de validacion
 
 ### Para administradores
-- 🛡️ Panel de administración global
-- 👤 Gestión de usuarios y organizadores
-- 💰 Control de pagos y dispersión de fondos (escrow)
+- Panel de administracion global
+- Gestion de usuarios y organizadores
+- Control de pagos y dispersion de fondos (escrow)
 
 ---
 
-## 🛠️ Stack tecnológico
+## Stack tecnologico
 
-| Capa | Tecnología |
+| Capa | Tecnologia |
 |------|-----------|
 | Framework | [Next.js 16](https://nextjs.org/) (App Router) |
 | UI | React 19 + Tailwind CSS v4 |
 | Base de datos | [Supabase](https://supabase.com/) (PostgreSQL) |
-| Autenticación | Supabase Auth |
+| Autenticacion | Supabase Auth |
 | Pagos | [Stripe](https://stripe.com/) + Webhooks |
 | Mapa de asientos | [Seats.io](https://seats.io/) |
-| Códigos QR | `qrcode` + HMAC-SHA256 firmados |
-| Escáner QR | `html5-qrcode` |
+| Codigos QR | `qrcode` + HMAC-SHA256 firmados |
+| Escaner QR | `html5-qrcode` |
 | Rate limiting | Upstash Redis |
 | Iconos | Lucide React |
 | Notificaciones | Sonner |
@@ -47,7 +49,7 @@
 
 ---
 
-## 🚀 Instalación local
+## Instalacion local
 
 ### Prerrequisitos
 - Node.js 18+
@@ -68,7 +70,7 @@ npm install
 
 ### 3. Configurar variables de entorno
 
-Crea un archivo `.env.local` en la raíz del proyecto con las siguientes variables:
+Crea un archivo `.env.local` en la raiz del proyecto con las siguientes variables:
 
 ```env
 # Supabase
@@ -100,74 +102,68 @@ Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
 
 ---
 
-## 📁 Estructura del proyecto
+## Estructura del proyecto
 
 ```
 src/
 ├── app/
-│   ├── (rutas públicas)
-│   │   ├── page.tsx              # Home con búsqueda de eventos
-│   │   ├── evento/[id]/          # Detalle de evento y selección de boletos
-│   │   ├── checkout/[eventoId]/  # Selección de asientos + pago
-│   │   ├── compra-exitosa/       # Confirmación con boletos descargables
+│   ├── (rutas publicas)
+│   │   ├── page.tsx              # Home con busqueda de eventos
+│   │   ├── evento/[id]/          # Detalle de evento y seleccion de boletos
+│   │   ├── checkout/[eventoId]/  # Seleccion de asientos + pago
+│   │   ├── compra-exitosa/       # Confirmacion con boletos descargables
 │   │   └── mis-boletos/          # Historial de compras del usuario
 │   ├── organizador/              # Panel del organizador
-│   ├── admin/                    # Panel de administración
-│   ├── verify/[id]/              # Escáner y validación de boletos
+│   ├── admin/                    # Panel de administracion
+│   ├── verify/[id]/              # Escaner y validacion de boletos
 │   └── api/                      # API Routes
-│       ├── checkout/             # Creación de órdenes + Stripe PaymentIntent
+│       ├── checkout/             # Creacion de ordenes + Stripe PaymentIntent
 │       ├── seats/hold/           # Reserva temporal de asientos (Seats.io)
-│       ├── verify/[id]/          # Validación y quemado de boletos
-│       └── webhooks/stripe/      # Webhook de confirmación de pagos
+│       ├── verify/[id]/          # Validacion y quemado de boletos
+│       └── webhooks/stripe/      # Webhook de confirmacion de pagos
 ├── Components/
 │   ├── layout/Navbar.tsx
 │   └── ui/
 │       ├── TicketCard.tsx        # Tarjeta visual del boleto con QR
-│       └── SearchForm.tsx        # Formulario de búsqueda con calendario
+│       └── SearchForm.tsx        # Formulario de busqueda con calendario
 └── lib/
     ├── supabase/                 # Clientes server/client de Supabase
-    ├── stripe.ts                 # Configuración de Stripe
-    └── utils/generateSecureQR.ts # Generación y validación de QR firmados
+    ├── stripe.ts                 # Configuracion de Stripe
+    └── utils/generateSecureQR.ts # Generacion y validacion de QR firmados
 ```
 
 ---
 
-## 🔒 Seguridad de los boletos
+## Seguridad de los boletos
 
-Los códigos QR están firmados digitalmente con **HMAC-SHA256**. Cada QR contiene:
+Los codigos QR estan firmados digitalmente con **HMAC-SHA256**. Cada QR contiene:
 - ID del boleto
 - ID del evento y del usuario
-- Fecha de expiración (1 día después del evento)
-- Firma criptográfica que impide falsificaciones
+- Fecha de expiracion (1 dia despues del evento)
+- Firma criptografica que impide falsificaciones
 
-El escáner verifica la firma antes de marcar el boleto como usado.
-
----
-
-## 🗺️ Flujo de compra
-
-```
-Evento → Selección de tipo (General/Preferente/VIP)
-       → Mapa de asientos (Seats.io)
-       → Reserva temporal del asiento (15 min)
-       → Formulario de pago (Stripe)
-       → Webhook confirma pago → QR firmado generado
-       → Boleto guardado en BD → Email de confirmación
-```
+El escaner verifica la firma antes de marcar el boleto como usado.
 
 ---
 
-## 🧪 Comandos útiles
+## Flujo de compra
+
+```
+Evento -> Seleccion de tipo (General/Preferente/VIP)
+       -> Mapa de asientos (Seats.io)
+       -> Reserva temporal del asiento (15 min)
+       -> Formulario de pago (Stripe)
+       -> Webhook confirma pago -> QR firmado generado
+       -> Boleto guardado en BD -> Email de confirmacion
+```
+
+---
+
+## Comandos utiles
 
 ```bash
 npm run dev      # Servidor de desarrollo
-npm run build    # Build de producción
-npm run start    # Servidor de producción
+npm run build    # Build de produccion
+npm run start    # Servidor de produccion
 npm run lint     # Linter
 ```
-
----
-
-## 📄 Licencia
-
-Este proyecto es privado. Todos los derechos reservados.
